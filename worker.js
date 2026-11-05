@@ -1,48 +1,25 @@
-const OP_ARITY = {
-  '+': 2,
-  '-': 2,
-  '*': 2,
-  '/': 2,
-  'pow': 2,
-  'sin': 1,
-  'cos': 1,
-  'tan': 1,
-  'sinh': 1,
-  'cosh': 1,
-  'tanh': 1,
-  'asin': 1,
-  'acos': 1,
-  'atan': 1,
-  'asinh': 1,
-  'acosh': 1,
-  'atanh': 1,
-  'log': 1,
-  'log2': 1,
-  'log10': 1,
-  'exp': 1,
-  'sqrt': 1,
-  'cbrt': 1
-};
+// Genetic Programming evolution engine (runs inside a Web Worker).
+// Shared helpers: OP_ARITY, generateFormulaSamples, evaluateTree,
+// treeToString, normalizeConfig.
+importScripts('shared.js');
 
-let targetFormula = "x*x + 2";
-let OPERATORS = [{
-    symbol: '+',
-    arity: 2
-  },
-  {
-    symbol: '-',
-    arity: 2
-  },
-  {
-    symbol: '*',
-    arity: 2
-  }
+const IMMIGRANT_RATE = 0.1;
+const LOOP_DELAY_MS = 50;
+
+const DEFAULT_OPERATORS = [
+  { symbol: '+', arity: 2 },
+  { symbol: '-', arity: 2 },
+  { symbol: '*', arity: 2 }
 ];
-let minError = 0.1;
+
+let OPERATORS = DEFAULT_OPERATORS;
+let targetFormula = 'x*x + 2';
+let targetR2 = 0.99;
 let maxGenerations = 1000;
 let populationSize = 100;
 let minX = -5;
 let maxX = 5;
+let sampleCount = DEFAULT_SAMPLE_COUNT;
 let mutationRate = 0.1;
 let crossoverRate = 0.7;
 let elitismRate = 0.05;
@@ -50,6 +27,14 @@ let tournamentSize = 5;
 let treeDepth = 4;
 let dataMode = 'formula';
 let dataset = [];
+
+// Training points, computed once per config (not once per evaluation).
+let points = [];
+
+let population = [];
+let running = false;
+let generation = 0;
+let loopTimer = null;
 
 const fitnessCache = new Map();
 
@@ -65,15 +50,6 @@ function getFitness(node) {
   return f;
 }
 
-function safeEvalFormula(formula, x) {
-  try {
-    return Function('x', `return ${formula};`)(x);
-  } catch (e) {
-    console.error("Invalid formula:", formula);
-    return x;
-  }
-}
-
 function randomInt(max) {
   return Math.floor(Math.random() * max);
 }
@@ -86,8 +62,7 @@ function randomTerminal() {
   }
 
   // ERC: random constant
-  const value =
-    (Math.random() * 20 - 10);
+  const value = Math.random() * 20 - 10;
 
   return value.toFixed(3);
 }
@@ -98,8 +73,7 @@ function randomTree(depth = 0) {
     return randomTerminal();
   }
 
-  const op =
-    OPERATORS[randomInt(OPERATORS.length)];
+  const op = OPERATORS[randomInt(OPERATORS.length)];
 
   if (op.arity === 1) {
     return {
@@ -115,82 +89,6 @@ function randomTree(depth = 0) {
   };
 }
 
-function evaluate(node, x) {
-
-  if (typeof node === 'string') {
-    return node === 'x' ?
-      x :
-      Number(node);
-  }
-
-  // unary operators
-  if (node.child) {
-
-    const v = evaluate(node.child, x);
-
-    switch (node.op) {
-      case 'sin':
-        return Math.sin(v);
-      case 'cos':
-        return Math.cos(v);
-      case 'tan':
-        return Math.tan(v);
-      case 'sinh':
-        return Math.sinh(v);
-      case 'cosh':
-        return Math.cosh(v);
-      case 'tanh':
-        return Math.tanh(v);
-      case 'asin':
-        return Math.asin(v);
-      case 'acos':
-        return Math.acos(v);
-      case 'atan':
-        return Math.atan(v);
-      case 'asinh':
-        return Math.asinh(v);
-      case 'acosh':
-        return Math.acosh(v);
-      case 'atanh':
-        return Math.atanh(v);
-      case 'log':
-        return Math.log(v);
-      case 'log2':
-        return Math.log2(v);
-      case 'log10':
-        return Math.log10(v);
-      case 'exp':
-        return Math.exp(v);
-      case 'sqrt':
-        return Math.sqrt(v);
-      case 'cbrt':
-        return Math.cbrt(v);
-    }
-  }
-
-  // binary operators
-  const left =
-    evaluate(node.left, x);
-
-  const right =
-    evaluate(node.right, x);
-
-  switch (node.op) {
-    case '+':
-      return left + right;
-    case '-':
-      return left - right;
-    case '*':
-      return left * right;
-    case '/':
-      return left / right;
-    case 'pow':
-      return Math.pow(left, right);
-  }
-
-  return 0;
-}
-
 function treeSize(node) {
 
   if (typeof node === 'string') {
@@ -201,74 +99,35 @@ function treeSize(node) {
     return 1 + treeSize(node.child);
   }
 
-  return (
-    1 +
-    treeSize(node.left) +
-    treeSize(node.right)
-  );
+  return 1 + treeSize(node.left) + treeSize(node.right);
 }
 
-function generateFormulaSamples() {
+function buildPoints() {
 
-  const samples = [];
-
-  for (
-    let x = minX; x <= maxX; x++
-  ) {
-
-    const y =
-      safeEvalFormula(
-        targetFormula,
-        x
-      );
-
-    samples.push({
-      x,
-      y
-    });
+  if (dataMode === 'dataset') {
+    return dataset.filter(
+      p => Number.isFinite(p.x) && Number.isFinite(p.y)
+    );
   }
 
-  return samples;
+  try {
+    return generateFormulaSamples(targetFormula, minX, maxX, sampleCount);
+  } catch (e) {
+    return [];
+  }
 }
 
 function fitness(program) {
 
-  let points = [];
-
-  // =========================
-  // BUILD DATASET
-  // =========================
-
-  if (dataMode === 'dataset') {
-
-    points = dataset;
-
-  } else {
-
-    for (let x = minX; x <= maxX; x++) {
-
-      const y =
-        safeEvalFormula(targetFormula, x);
-
-      if (Number.isFinite(y)) {
-        points.push({
-          x,
-          y
-        });
-      }
-    }
-  }
+  const invalid = {
+    rawError: Infinity,
+    r2: -Infinity,
+    totalFitness: Infinity
+  };
 
   if (points.length === 0) {
-    return {
-      rawError: Infinity,
-      totalFitness: Infinity
-    };
+    return invalid;
   }
-
-  // =========================
-  // MEAN OF Y
-  // =========================
 
   let meanY = 0;
 
@@ -278,72 +137,49 @@ function fitness(program) {
 
   meanY /= points.length;
 
-  // =========================
-  // SS_tot and SS_res
-  // =========================
-
   let ssTot = 0;
   let ssRes = 0;
 
   for (const p of points) {
 
-    const predicted =
-      evaluate(program, p.x);
+    const predicted = evaluateTree(program, p.x);
 
     if (!Number.isFinite(predicted)) {
-      return {
-        rawError: Infinity,
-        totalFitness: Infinity
-      };
+      return invalid;
     }
 
-    ssTot += Math.pow(p.y - meanY, 2);
-
-    ssRes += Math.pow(p.y - predicted, 2);
+    ssTot += (p.y - meanY) ** 2;
+    ssRes += (p.y - predicted) ** 2;
   }
 
-  // Prevent divide-by-zero
+  // R² is undefined for a constant target
   if (ssTot === 0) {
-    return {
-      rawError: Infinity,
-      totalFitness: Infinity
-    };
+    return invalid;
   }
 
-  // =========================
-  // R²
-  // =========================
-
-  const r2 =
-    1 - (ssRes / ssTot);
+  const r2 = 1 - ssRes / ssTot;
 
   // convert to minimization
-  const error =
-    1 - r2;
+  const error = 1 - r2;
 
-  // complexity penalty
-  const complexityPenalty =
-    treeSize(program) * 0.001;
-
-  const totalFitness =
-    error + complexityPenalty;
+  const complexityPenalty = treeSize(program) * 0.001;
 
   return {
     rawError: error,
     r2,
-    totalFitness
+    totalFitness: error + complexityPenalty
   };
 }
 
-function tournamentSelection(population, size = 5) {
+function tournamentSelection(pop, size = 5) {
   let best = null;
   let bestScore = Infinity;
 
   for (let i = 0; i < size; i++) {
-    const candidate = population[randomInt(population.length)];
+    const candidate = pop[randomInt(pop.length)];
     const score = getFitness(candidate).totalFitness;
 
-    if (score < bestScore) {
+    if (best === null || score < bestScore) {
       best = candidate;
       bestScore = score;
     }
@@ -359,31 +195,19 @@ function crossover(a, b) {
   if (b == null) return clone(a);
 
   // terminal safety
-  if (
-    typeof a === 'string' ||
-    typeof b === 'string'
-  ) {
-    return Math.random() < 0.5 ?
-      clone(a) :
-      clone(b);
+  if (typeof a === 'string' || typeof b === 'string') {
+    return Math.random() < 0.5 ? clone(a) : clone(b);
   }
 
   // unary node handling
   if (a.child || b.child) {
-
-    const source =
-      Math.random() < 0.5 ? a : b;
-
-    return clone(source);
+    return clone(Math.random() < 0.5 ? a : b);
   }
 
   // binary node handling
   return {
-    op: Math.random() < 0.5 ?
-      a.op : b.op,
-
+    op: Math.random() < 0.5 ? a.op : b.op,
     left: crossover(a.left, b.left),
-
     right: crossover(a.right, b.right)
   };
 }
@@ -398,11 +222,8 @@ function normalizeNode(node, depth = 0) {
     return node;
   }
 
-  const unaryOps = ['sin', 'cos', 'tan', 'sinh', 'cosh', 'tanh', 'asin', 'acos', 'atan', 'asinh', 'acosh', 'atanh', 'log', 'log2', 'log10', 'exp', 'sqrt', 'cbrt'];
-
   // unary operator
-  if (unaryOps.includes(node.op)) {
-
+  if (OP_ARITY[node.op] === 1) {
     return {
       op: node.op,
       child: normalizeNode(
@@ -419,7 +240,6 @@ function normalizeNode(node, depth = 0) {
       node.left || node.child || randomTree(depth + 1),
       depth + 1
     ),
-
     right: normalizeNode(
       node.right || randomTree(depth + 1),
       depth + 1
@@ -447,10 +267,7 @@ function mutate(node, depth = 0) {
       const n = Number(node);
 
       if (!isNaN(n)) {
-
-        const delta =
-          (Math.random() * 2 - 1);
-
+        const delta = Math.random() * 2 - 1;
         return (n + delta).toFixed(3);
       }
 
@@ -460,10 +277,7 @@ function mutate(node, depth = 0) {
     return node;
   }
 
-  if (
-    Math.random() < mutationRate &&
-    depth < treeDepth
-  ) {
+  if (Math.random() < mutationRate && depth < treeDepth) {
     return randomTree(depth);
   }
 
@@ -471,70 +285,32 @@ function mutate(node, depth = 0) {
 
   if (Math.random() < mutationRate) {
 
-    const op =
-      OPERATORS[randomInt(OPERATORS.length)];
+    const op = OPERATORS[randomInt(OPERATORS.length)];
 
     child.op = op.symbol;
 
     if (op.arity === 1) {
-
       delete child.left;
       delete child.right;
-
-      child.child =
-        child.child ||
-        randomTree(depth + 1);
-
+      child.child = child.child || randomTree(depth + 1);
     } else {
-
       delete child.child;
-
-      child.left =
-        child.left ||
-        randomTree(depth + 1);
-
-      child.right =
-        child.right ||
-        randomTree(depth + 1);
+      child.left = child.left || randomTree(depth + 1);
+      child.right = child.right || randomTree(depth + 1);
     }
   }
 
   if (child.child) {
-    child.child =
-      mutate(child.child, depth + 1);
+    child.child = mutate(child.child, depth + 1);
   } else {
-    child.left =
-      mutate(child.left, depth + 1);
-
-    child.right =
-      mutate(child.right, depth + 1);
+    child.left = mutate(child.left, depth + 1);
+    child.right = mutate(child.right, depth + 1);
   }
 
   return normalizeNode(child, depth);
 }
 
-function treeToString(node) {
-
-  if (typeof node === 'string') {
-    return node;
-  }
-
-  if (node.child) {
-    return `${node.op}(${treeToString(node.child)})`;
-  }
-
-  if (node.op === 'pow') {
-    return `pow(${treeToString(node.left)}, ${treeToString(node.right)})`;
-  }
-
-  return `(${treeToString(node.left)} ${node.op} ${treeToString(node.right)})`;
-}
-
-let population = [];
-let running = false;
-let generation = 0;
-
-function initPopulation(size = 100) {
+function initPopulation(size) {
   population = [];
   generation = 0;
 
@@ -543,73 +319,88 @@ function initPopulation(size = 100) {
   }
 }
 
+// How the next generation of exactly `size` individuals is split.
+// Elites and immigrants never crowd out bred offspring entirely, and
+// the total always equals `size` (fixes unbounded growth / no-breeding).
+function generationPlan(size) {
+  const eliteCount = Math.min(size, Math.floor(size * elitismRate));
+  const immigrantCount = Math.min(
+    size - eliteCount,
+    Math.floor(size * IMMIGRANT_RATE)
+  );
+  const offspringCount = size - eliteCount - immigrantCount;
+
+  return { eliteCount, immigrantCount, offspringCount };
+}
+
+function finish(reason, best, result) {
+  running = false;
+
+  postMessage({
+    type: 'finished',
+    reason,
+    best,
+    fitness: result.totalFitness,
+    rawError: result.rawError,
+    r2: result.r2,
+    generation,
+    expression: treeToString(best)
+  });
+}
+
+function sortPopulation() {
+  population.sort(
+    (a, b) => getFitness(a).totalFitness - getFitness(b).totalFitness
+  );
+}
+
 function evolve() {
 
   generation++;
 
-  population.sort(
-    (a, b) =>
-    getFitness(a).totalFitness -
-    getFitness(b).totalFitness
-  );
+  sortPopulation();
 
   const best = population[0];
   const result = getFitness(best);
-  const bestFitness =
-    result.totalFitness;
-  const rawError =
-    result.rawError;
 
   postMessage({
     type: 'update',
     best,
-    fitness: bestFitness,
-    rawError: rawError,
+    fitness: result.totalFitness,
+    rawError: result.rawError,
     r2: result.r2,
     generation,
     expression: treeToString(best),
     population: clone(population)
   });
 
-  if (
-    rawError <= minError ||
-    generation >= maxGenerations
-  ) {
-
-    running = false;
-
-    postMessage({
-      type: 'finished',
-      best,
-      fitness: bestFitness,
-      rawError: rawError,
-      generation,
-      expression: treeToString(best)
-    });
-
+  if (result.r2 >= targetR2) {
+    finish('targetReached', best, result);
     return;
   }
 
+  if (generation >= maxGenerations) {
+    finish('maxGenerations', best, result);
+    return;
+  }
+
+  const plan = generationPlan(populationSize);
   const next = [];
 
-  // Elitism
-  const eliteCount = Math.floor(population.length * elitismRate);
-
-  for (let i = 0; i < eliteCount; i++) {
+  // Elitism (population is sorted best-first)
+  for (let i = 0; i < plan.eliteCount && i < population.length; i++) {
     next.push(clone(population[i]));
   }
 
-  // Breed new population
-  while (next.length < population.length - 20) {
+  // Breed offspring
+  const offspringTarget = next.length + plan.offspringCount;
 
-    const parentA =
-      tournamentSelection(population, tournamentSize);
+  while (next.length < offspringTarget) {
 
-    const parentB =
-      tournamentSelection(population, tournamentSize);
+    const parentA = tournamentSelection(population, tournamentSize);
+    const parentB = tournamentSelection(population, tournamentSize);
 
-    let child =
-      Math.random() < crossoverRate ?
+    let child = Math.random() < crossoverRate ?
       crossover(parentA, parentB) :
       clone(parentA);
 
@@ -618,232 +409,132 @@ function evolve() {
     next.push(child);
   }
 
-  // Random immigrants
-  const immigrantCount = Math.floor(populationSize * 0.1);
-  for (let i = 0; i < immigrantCount; i++) {
-    next.push(randomTree());
-  }
-
+  // Random immigrants keep diversity up
   while (next.length < populationSize) {
-    next.push(clone(population[randomInt(population.length)]));
+    next.push(randomTree());
   }
 
   population = next;
   fitnessCache.clear();
 }
 
+function stopLoop() {
+  running = false;
+
+  if (loopTimer !== null) {
+    clearTimeout(loopTimer);
+    loopTimer = null;
+  }
+}
+
 function loop() {
+  loopTimer = null;
+
   if (!running) return;
 
+  evolve();
+
+  if (running) {
+    loopTimer = setTimeout(loop, LOOP_DELAY_MS);
+  }
+}
+
+function startLoop() {
+  // Never run two loops at once (e.g. a quick Stop -> Resume).
+  stopLoop();
+
+  // Already at the generation limit: say so instead of silently
+  // doing nothing.
   if (generation >= maxGenerations) {
-    running = false;
+    sortPopulation();
+    const best = population[0];
+    finish('maxGenerations', best, getFitness(best));
     return;
   }
 
-  evolve();
-  setTimeout(loop, 50);
+  running = true;
+  loop();
 }
 
 function buildOperators(ops) {
-  const operators = [];
-  for (let i = 0; i < ops.length; i++) {
-    operators.push({
-      symbol: ops[i],
-      arity: OP_ARITY[ops[i]]
-    });
+  const operators = (ops || [])
+    .filter(symbol => OP_ARITY[symbol])
+    .map(symbol => ({ symbol, arity: OP_ARITY[symbol] }));
+
+  return operators.length > 0 ? operators : DEFAULT_OPERATORS;
+}
+
+function applyConfig(rawConfig) {
+  const config = normalizeConfig(rawConfig);
+
+  targetFormula = config.targetFormula;
+  targetR2 = config.targetR2;
+  maxGenerations = config.maxGenerations;
+  populationSize = config.populationSize;
+  minX = config.minX;
+  maxX = config.maxX;
+  sampleCount = config.sampleCount;
+  OPERATORS = buildOperators(config.operators);
+  mutationRate = config.mutationRate;
+  crossoverRate = config.crossoverRate;
+  elitismRate = config.elitismRate;
+  tournamentSize = config.tournamentSize;
+  treeDepth = config.treeDepth;
+  dataMode = config.dataMode;
+  dataset = (config.dataset || []).map(p => ({
+    x: Number(p.x),
+    y: Number(p.y)
+  }));
+
+  points = buildPoints();
+  fitnessCache.clear();
+}
+
+function ensurePopulation() {
+  population = (population || []).filter(Boolean);
+
+  while (population.length < populationSize) {
+    population.push(randomTree());
   }
-  if (!operators || operators.length === 0) {
-    return [{
-        symbol: '+',
-        arity: 2
-      },
-      {
-        symbol: '-',
-        arity: 2
-      },
-      {
-        symbol: '*',
-        arity: 2
-      }
-    ];
-  }
-  return operators;
 }
 
 onmessage = (e) => {
   const msg = e.data;
 
   if (msg.type === 'start') {
+    stopLoop();
+    // Apply the config first so the requested population size is used.
+    applyConfig(msg.config);
     initPopulation(populationSize);
-    targetFormula = msg.config.targetFormula;
-    minError = msg.config.minError;
-    maxGenerations = msg.config.maxGenerations;
-    populationSize = msg.config.populationSize;
-    minX = msg.config.minX;
-    maxX = msg.config.maxX;
-    OPERATORS = buildOperators(msg.config.operators);
-    mutationRate = msg.config.mutationRate;
-    crossoverRate = msg.config.crossoverRate;
-    elitismRate = msg.config.elitismRate;
-    tournamentSize = msg.config.tournamentSize;
-    treeDepth = msg.config.treeDepth;
-    dataMode = msg.config.dataMode;
-    dataset = (msg.config.dataset || []).map(p => ({
-      x: Number(p.x),
-      y: Number(p.y)
-    })) || [];
-    running = true;
-    loop();
+    startLoop();
   }
 
   if (msg.type === 'stop') {
-    running = false;
+    stopLoop();
   }
 
   if (msg.type === 'resume') {
-  
-    // safety:
-    // rebuild if population missing
-  
-    if (
-      !population ||
-      population.length === 0
-    ) {
-      initPopulation(populationSize);
-    }
-  
-    targetFormula =
-      msg.config.targetFormula;
-  
-    minError =
-      msg.config.minError;
-  
-    maxGenerations =
-      msg.config.maxGenerations;
-  
-    populationSize =
-      msg.config.populationSize;
-  
-    minX =
-      msg.config.minX;
-  
-    maxX =
-      msg.config.maxX;
-  
-    OPERATORS =
-      buildOperators(msg.config.operators);
-  
-    mutationRate =
-      msg.config.mutationRate;
-  
-    crossoverRate =
-      msg.config.crossoverRate;
-  
-    elitismRate =
-      msg.config.elitismRate;
-  
-    tournamentSize =
-      msg.config.tournamentSize;
-  
-    treeDepth =
-      msg.config.treeDepth;
-  
-    dataMode =
-      msg.config.dataMode;
-  
-    dataset =
-      (msg.config.dataset || []).map(p => ({
-        x: Number(p.x),
-        y: Number(p.y)
-      })) || [];
-  
-    running = true;
-  
-    loop();
+    applyConfig(msg.config);
+    ensurePopulation();
+    startLoop();
   }
-  
-  if (msg.type === 'restore') {
-  
-    const config =
-      msg.state.config || {};
-  
-    generation =
-      msg.state.generation || 0;
-  
-    targetFormula =
-      config.targetFormula;
-  
-    minError =
-      config.minError;
-  
-    maxGenerations =
-      config.maxGenerations;
-  
-    populationSize =
-      config.populationSize;
-  
-    minX =
-      config.minX;
-  
-    maxX =
-      config.maxX;
-  
-    OPERATORS =
-      buildOperators(config.operators);
-  
-    mutationRate =
-      config.mutationRate;
-  
-    crossoverRate =
-      config.crossoverRate;
-  
-    elitismRate =
-      config.elitismRate;
-  
-    tournamentSize =
-      config.tournamentSize;
-  
-    treeDepth =
-      config.treeDepth;
-  
-    dataMode =
-      config.dataMode;
-  
-    dataset =
-      (config.dataset || []).map(p => ({
-        x: Number(p.x),
-        y: Number(p.y)
-      }));
-  
-    // IMPORTANT:
-    // extract only raw trees
 
-    population =
-      (msg.state.population || [])
-      .filter(Boolean);
-      
-    // refill missing individuals
-  
-    while (
-      population.length <
-      populationSize
-    ) {
-      population.push(randomTree());
-    }
-      
-    fitnessCache.clear();
-    
-    // restored successfully
-    // stay paused until Resume clicked
-    
-    running = false;
-    
+  if (msg.type === 'restore') {
+    stopLoop();
+
+    applyConfig(msg.state.config || {});
+
+    generation = msg.state.generation || 0;
+
+    population = msg.state.population || [];
+
+    ensurePopulation();
+
+    // stay paused until Resume is clicked
     postMessage({
       type: 'restored',
       generation,
       populationSize: population.length
     });
-    
   }
-  
 };
