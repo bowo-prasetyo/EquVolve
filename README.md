@@ -64,9 +64,9 @@ Every setting has a short explanation under it in the app.
 | Population Size    | Programs per generation (constant for the whole run)                                          | 200     |
 | Max Generations    | Stop after this many generations                                                              | 500     |
 | Target R²          | Stop as soon as the best program reaches this R² (1 = perfect fit)                            | 0.999   |
-| Crossover Rate     | Probability that an offspring is made by subtree crossover rather than copying a parent        | 0.8     |
-| Mutation Rate      | Probability that an offspring is then mutated                                                 | 0.2     |
-| Elitism Rate       | Fraction of the best programs copied unchanged into the next generation                       | 0.02    |
+| Crossover Rate     | Probability that an offspring is made by subtree crossover rather than copying a parent        | 0.7     |
+| Mutation Rate      | Probability that an offspring is then mutated                                                 | 0.1     |
+| Elitism Rate       | Fraction of the best programs copied unchanged into the next generation                       | 0.05    |
 | Tournament Size    | Programs compared in each selection tournament; larger is greedier                            | 5       |
 | Initial Tree Depth | Maximum depth of the random programs that start the run (1–12)                                | 4       |
 | Max Tree Depth     | Hard depth limit for evolved programs, to stop them bloating (up to 17)                       | 8       |
