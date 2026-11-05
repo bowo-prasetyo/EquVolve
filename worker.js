@@ -1,10 +1,22 @@
 // Genetic Programming evolution engine (runs inside a Web Worker).
-// Shared helpers: OP_ARITY, generateFormulaSamples, evaluateTree,
-// treeToString, normalizeConfig.
+// Shared helpers from shared.js: OP_ARITY, generateFormulaSamples,
+// evaluateTree, treeSize, treeDepth, treeToString, scaledTree,
+// simplifyTree, normalizeConfig.
 importScripts('shared.js');
 
 const IMMIGRANT_RATE = 0.1;
 const LOOP_DELAY_MS = 50;
+const COMPLEXITY_PENALTY = 0.001;
+
+// Koza's rule: pick an internal node as a crossover point 90% of the
+// time, so crossover moves meaningful structure instead of leaves.
+const INTERNAL_NODE_BIAS = 0.9;
+
+// Crossover attempts before giving up and returning the first parent
+// (attempts fail when the child would exceed the max depth).
+const CROSSOVER_ATTEMPTS = 5;
+
+const FITNESS_CACHE_LIMIT = 50000;
 
 const DEFAULT_OPERATORS = [
   { symbol: '+', arity: 2 },
@@ -24,29 +36,40 @@ let mutationRate = 0.1;
 let crossoverRate = 0.7;
 let elitismRate = 0.05;
 let tournamentSize = 5;
-let treeDepth = 4;
+let initDepth = 4;   // depth of randomly generated trees
+let maxDepth = 8;    // hard limit for evolved trees
+let linearScaling = true;
 let dataMode = 'formula';
 let dataset = [];
 
 // Training points, computed once per config (not once per evaluation).
 let points = [];
+let meanY = 0;
+let ssTot = 0;
 
 let population = [];
 let running = false;
 let generation = 0;
 let loopTimer = null;
 
+// Keyed by tree structure. Kept across generations (elites and clones
+// are not re-evaluated) and cleared whenever the training data changes.
 const fitnessCache = new Map();
 
 function getFitness(node) {
-  const key = JSON.stringify(node);
+  const key = treeToString(node);
 
-  if (fitnessCache.has(key)) {
-    return fitnessCache.get(key);
+  let f = fitnessCache.get(key);
+
+  if (f === undefined) {
+    if (fitnessCache.size >= FITNESS_CACHE_LIMIT) {
+      fitnessCache.clear();
+    }
+
+    f = fitness(node);
+    fitnessCache.set(key, f);
   }
 
-  const f = fitness(node);
-  fitnessCache.set(key, f);
   return f;
 }
 
@@ -54,53 +77,72 @@ function randomInt(max) {
   return Math.floor(Math.random() * max);
 }
 
-function randomTerminal() {
-
-  // 50% variable
-  if (Math.random() < 0.5) {
-    return 'x';
-  }
-
-  // ERC: random constant
-  const value = Math.random() * 20 - 10;
-
-  return value.toFixed(3);
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj));
 }
 
-function randomTree(depth = 0) {
+// =========================================================
+// TREE GENERATION
+// =========================================================
 
-  if (depth >= treeDepth || Math.random() < 0.2) {
+function randomConstant() {
+  return (Math.random() * 20 - 10).toFixed(3);
+}
+
+function randomTerminal() {
+  return Math.random() < 0.5 ? 'x' : randomConstant();
+}
+
+function randomOperator(arity = null) {
+  const pool = arity === null ?
+    OPERATORS :
+    OPERATORS.filter(op => op.arity === arity);
+
+  return pool.length ? pool[randomInt(pool.length)] : null;
+}
+
+// "full" fills every branch to exactly `depth`; "grow" may stop early.
+function generateTree(depth, method = 'grow') {
+
+  if (depth <= 0 || (method === 'grow' && Math.random() < 0.3)) {
     return randomTerminal();
   }
 
-  const op = OPERATORS[randomInt(OPERATORS.length)];
+  const op = randomOperator();
 
   if (op.arity === 1) {
-    return {
-      op: op.symbol,
-      child: randomTree(depth + 1)
-    };
+    return { op: op.symbol, child: generateTree(depth - 1, method) };
   }
 
   return {
     op: op.symbol,
-    left: randomTree(depth + 1),
-    right: randomTree(depth + 1)
+    left: generateTree(depth - 1, method),
+    right: generateTree(depth - 1, method)
   };
 }
 
-function treeSize(node) {
+// Ramped half-and-half: depths 2..initDepth, half "full", half "grow",
+// so the first generation covers many shapes and sizes.
+function initPopulation(size) {
+  population = [];
+  generation = 0;
 
-  if (typeof node === 'string') {
-    return 1;
+  const minD = Math.min(2, initDepth);
+  const span = initDepth - minD + 1;
+
+  for (let i = 0; i < size; i++) {
+    const depth = minD + (Math.floor(i / 2) % span);
+    population.push(generateTree(depth, i % 2 === 0 ? 'full' : 'grow'));
   }
-
-  if (node.child) {
-    return 1 + treeSize(node.child);
-  }
-
-  return 1 + treeSize(node.left) + treeSize(node.right);
 }
+
+function randomImmigrant() {
+  return generateTree(initDepth, Math.random() < 0.5 ? 'full' : 'grow');
+}
+
+// =========================================================
+// FITNESS
+// =========================================================
 
 function buildPoints() {
 
@@ -117,59 +159,110 @@ function buildPoints() {
   }
 }
 
+// R² of the program on the training points. With linear scaling the
+// program is scored as a + b*f(x) with the least-squares a and b, so
+// R² measures how well the program captures the *shape* of the data.
 function fitness(program) {
 
   const invalid = {
     rawError: Infinity,
     r2: -Infinity,
-    totalFitness: Infinity
+    totalFitness: Infinity,
+    a: 0,
+    b: 1
   };
 
-  if (points.length === 0) {
+  const n = points.length;
+
+  if (n === 0 || ssTot === 0) {
     return invalid;
   }
 
-  let meanY = 0;
+  const preds = new Array(n);
+  let meanF = 0;
 
-  for (const p of points) {
-    meanY += p.y;
-  }
+  for (let i = 0; i < n; i++) {
+    const v = evaluateTree(program, points[i].x);
 
-  meanY /= points.length;
-
-  let ssTot = 0;
-  let ssRes = 0;
-
-  for (const p of points) {
-
-    const predicted = evaluateTree(program, p.x);
-
-    if (!Number.isFinite(predicted)) {
+    if (!Number.isFinite(v)) {
       return invalid;
     }
 
-    ssTot += (p.y - meanY) ** 2;
-    ssRes += (p.y - predicted) ** 2;
+    preds[i] = v;
+    meanF += v;
   }
 
-  // R² is undefined for a constant target
-  if (ssTot === 0) {
+  meanF /= n;
+
+  let a = 0;
+  let b = 1;
+
+  if (linearScaling) {
+    let cov = 0;
+    let varF = 0;
+
+    for (let i = 0; i < n; i++) {
+      const df = preds[i] - meanF;
+      cov += df * (points[i].y - meanY);
+      varF += df * df;
+    }
+
+    // A (numerically) constant program can only predict the mean.
+    if (varF > 1e-12 * Math.max(1, meanF * meanF) * n) {
+      b = cov / varF;
+      a = meanY - b * meanF;
+    } else {
+      b = 0;
+      a = meanY;
+    }
+  }
+
+  let ssRes = 0;
+
+  for (let i = 0; i < n; i++) {
+    const r = points[i].y - (a + b * preds[i]);
+    ssRes += r * r;
+  }
+
+  if (!Number.isFinite(ssRes)) {
     return invalid;
   }
 
   const r2 = 1 - ssRes / ssTot;
-
-  // convert to minimization
   const error = 1 - r2;
-
-  const complexityPenalty = treeSize(program) * 0.001;
 
   return {
     rawError: error,
     r2,
-    totalFitness: error + complexityPenalty
+    totalFitness: error + treeSize(program) * COMPLEXITY_PENALTY,
+    a,
+    b
   };
 }
+
+// The program as it is actually used: wrapped in a + b*f(x) when
+// linear scaling is on, then simplified for display and export.
+function modelOf(program) {
+  const f = getFitness(program);
+
+  let model = program;
+
+  if (linearScaling && Number.isFinite(f.totalFitness)) {
+    // Drop floating-point noise such as "+ 5.6e-17" or "* 0.9999999999".
+    const scale = Math.abs(meanY) + Math.sqrt(ssTot / points.length);
+    const a = Math.abs(f.a) <= 1e-9 * scale ? 0 : f.a;
+    const rb = Math.round(f.b);
+    const b = rb !== 0 && Math.abs(f.b - rb) <= 1e-9 * Math.abs(f.b) ? rb : f.b;
+
+    model = scaledTree(program, a, b);
+  }
+
+  return simplifyTree(model, points);
+}
+
+// =========================================================
+// SELECTION & VARIATION
+// =========================================================
 
 function tournamentSelection(pop, size = 5) {
   let best = null;
@@ -185,143 +278,124 @@ function tournamentSelection(pop, size = 5) {
     }
   }
 
-  return clone(best);
+  return best;
 }
 
+// Every node with a way to replace it: {node, depth, set(newNode)}.
+function listNodes(root) {
+  const out = [];
+  const holder = { root };
+
+  const walk = (parent, key, depth) => {
+    const node = parent[key];
+
+    out.push({
+      node,
+      depth,
+      set: (n) => { parent[key] = n; }
+    });
+
+    if (typeof node === 'string') return;
+
+    if (node.child !== undefined) {
+      walk(node, 'child', depth + 1);
+    } else {
+      walk(node, 'left', depth + 1);
+      walk(node, 'right', depth + 1);
+    }
+  };
+
+  walk(holder, 'root', 0);
+
+  return { holder, nodes: out };
+}
+
+function pickNode(nodes) {
+  const internal = nodes.filter(n => typeof n.node !== 'string');
+  const leaves = nodes.filter(n => typeof n.node === 'string');
+
+  if (internal.length && (Math.random() < INTERNAL_NODE_BIAS || !leaves.length)) {
+    return internal[randomInt(internal.length)];
+  }
+
+  return leaves[randomInt(leaves.length)];
+}
+
+// Standard subtree crossover: replace a random subtree of A with a
+// random subtree of B, rejecting children deeper than maxDepth.
 function crossover(a, b) {
 
-  // null safety
-  if (a == null) return clone(b);
-  if (b == null) return clone(a);
+  for (let attempt = 0; attempt < CROSSOVER_ATTEMPTS; attempt++) {
+    const { holder, nodes } = listNodes(clone(a));
+    const target = pickNode(nodes);
+    const donor = pickNode(listNodes(b).nodes);
 
-  // terminal safety
-  if (typeof a === 'string' || typeof b === 'string') {
-    return Math.random() < 0.5 ? clone(a) : clone(b);
-  }
-
-  // unary node handling
-  if (a.child || b.child) {
-    return clone(Math.random() < 0.5 ? a : b);
-  }
-
-  // binary node handling
-  return {
-    op: Math.random() < 0.5 ? a.op : b.op,
-    left: crossover(a.left, b.left),
-    right: crossover(a.right, b.right)
-  };
-}
-
-function clone(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
-
-function normalizeNode(node, depth = 0) {
-
-  if (typeof node === 'string') {
-    return node;
-  }
-
-  // unary operator
-  if (OP_ARITY[node.op] === 1) {
-    return {
-      op: node.op,
-      child: normalizeNode(
-        node.child || node.left || node.right || randomTree(depth + 1),
-        depth + 1
-      )
-    };
-  }
-
-  // binary operator
-  return {
-    op: node.op,
-    left: normalizeNode(
-      node.left || node.child || randomTree(depth + 1),
-      depth + 1
-    ),
-    right: normalizeNode(
-      node.right || randomTree(depth + 1),
-      depth + 1
-    )
-  };
-}
-
-function mutate(node, depth = 0) {
-
-  if (node == null) {
-    return randomTree(depth);
-  }
-
-  if (typeof node === 'string') {
-
-    // mutate terminal
-    if (Math.random() < mutationRate) {
-
-      // keep x sometimes
-      if (node === 'x' && Math.random() < 0.5) {
-        return 'x';
-      }
-
-      // numeric perturbation
-      const n = Number(node);
-
-      if (!isNaN(n)) {
-        const delta = Math.random() * 2 - 1;
-        return (n + delta).toFixed(3);
-      }
-
-      return randomTerminal();
+    if (target.depth + treeDepth(donor.node) > maxDepth) {
+      continue;
     }
 
-    return node;
+    target.set(clone(donor.node));
+
+    return holder.root;
   }
 
-  if (Math.random() < mutationRate && depth < treeDepth) {
-    return randomTree(depth);
-  }
+  return clone(a);
+}
 
-  const child = clone(node);
+// Replace a random subtree with a new random one (never deeper than
+// maxDepth overall).
+function subtreeMutation(tree) {
+  const { holder, nodes } = listNodes(clone(tree));
+  const target = nodes[randomInt(nodes.length)];
+  const room = Math.min(initDepth, maxDepth - target.depth);
 
-  if (Math.random() < mutationRate) {
+  target.set(generateTree(Math.max(0, room), 'grow'));
 
-    const op = OPERATORS[randomInt(OPERATORS.length)];
+  return holder.root;
+}
 
-    child.op = op.symbol;
+// Change one node in place: an operator to another of the same arity,
+// a constant by a small step, or a terminal to another terminal.
+function pointMutation(tree) {
+  const { holder, nodes } = listNodes(clone(tree));
+  const target = nodes[randomInt(nodes.length)];
+  const node = target.node;
 
-    if (op.arity === 1) {
-      delete child.left;
-      delete child.right;
-      child.child = child.child || randomTree(depth + 1);
+  if (typeof node === 'string') {
+    if (node !== 'x' && Math.random() < 0.7) {
+      // multi-scale step (coarse, medium or fine) so constants can be
+      // both moved far and fine-tuned
+      const c = Number(node);
+      const scale = Math.max(1, Math.abs(c)) * Math.pow(10, -randomInt(3));
+      const step = (Math.random() * 2 - 1) * scale;
+      target.set(String(Number((c + step).toPrecision(6))));
     } else {
-      delete child.child;
-      child.left = child.left || randomTree(depth + 1);
-      child.right = child.right || randomTree(depth + 1);
+      target.set(randomTerminal());
     }
+
+    return holder.root;
   }
 
-  if (child.child) {
-    child.child = mutate(child.child, depth + 1);
-  } else {
-    child.left = mutate(child.left, depth + 1);
-    child.right = mutate(child.right, depth + 1);
+  const op = randomOperator(OP_ARITY[node.op]);
+
+  if (op) {
+    node.op = op.symbol;
   }
 
-  return normalizeNode(child, depth);
+  return holder.root;
 }
 
-function initPopulation(size) {
-  population = [];
-  generation = 0;
-
-  for (let i = 0; i < size; i++) {
-    population.push(randomTree());
-  }
+function mutate(tree) {
+  return Math.random() < 0.5 ? subtreeMutation(tree) : pointMutation(tree);
 }
+
+// =========================================================
+// EVOLUTION LOOP
+// =========================================================
 
 // How the next generation of exactly `size` individuals is split.
 // Elites and immigrants never crowd out bred offspring entirely, and
-// the total always equals `size` (fixes unbounded growth / no-breeding).
+// the total always equals `size`.
 function generationPlan(size) {
   const eliteCount = Math.min(size, Math.floor(size * elitismRate));
   const immigrantCount = Math.min(
@@ -333,19 +407,31 @@ function generationPlan(size) {
   return { eliteCount, immigrantCount, offspringCount };
 }
 
-function finish(reason, best, result) {
-  running = false;
+function report(type, extra = {}) {
+  const best = population[0];
+  const result = getFitness(best);
+  const model = modelOf(best);
 
   postMessage({
-    type: 'finished',
-    reason,
+    type,
     best,
+    model,
     fitness: result.totalFitness,
     rawError: result.rawError,
     r2: result.r2,
+    // size of the program as shown to the user
+    size: treeSize(model),
     generation,
-    expression: treeToString(best)
+    expression: treeToString(best),
+    ...extra
   });
+
+  return result;
+}
+
+function finish(reason) {
+  running = false;
+  report('finished', { reason });
 }
 
 function sortPopulation() {
@@ -360,27 +446,20 @@ function evolve() {
 
   sortPopulation();
 
-  const best = population[0];
-  const result = getFitness(best);
+  const median = getFitness(population[Math.floor(population.length / 2)]);
 
-  postMessage({
-    type: 'update',
-    best,
-    fitness: result.totalFitness,
-    rawError: result.rawError,
-    r2: result.r2,
-    generation,
-    expression: treeToString(best),
+  const result = report('update', {
+    medianR2: median.r2,
     population: clone(population)
   });
 
   if (result.r2 >= targetR2) {
-    finish('targetReached', best, result);
+    finish('targetReached');
     return;
   }
 
   if (generation >= maxGenerations) {
-    finish('maxGenerations', best, result);
+    finish('maxGenerations');
     return;
   }
 
@@ -389,7 +468,7 @@ function evolve() {
 
   // Elitism (population is sorted best-first)
   for (let i = 0; i < plan.eliteCount && i < population.length; i++) {
-    next.push(clone(population[i]));
+    next.push(population[i]);
   }
 
   // Breed offspring
@@ -398,24 +477,24 @@ function evolve() {
   while (next.length < offspringTarget) {
 
     const parentA = tournamentSelection(population, tournamentSize);
-    const parentB = tournamentSelection(population, tournamentSize);
 
     let child = Math.random() < crossoverRate ?
-      crossover(parentA, parentB) :
-      clone(parentA);
+      crossover(parentA, tournamentSelection(population, tournamentSize)) :
+      parentA;
 
-    child = mutate(child);
+    if (Math.random() < mutationRate) {
+      child = mutate(child);
+    }
 
     next.push(child);
   }
 
   // Random immigrants keep diversity up
   while (next.length < populationSize) {
-    next.push(randomTree());
+    next.push(randomImmigrant());
   }
 
   population = next;
-  fitnessCache.clear();
 }
 
 function stopLoop() {
@@ -447,14 +526,17 @@ function startLoop() {
   // doing nothing.
   if (generation >= maxGenerations) {
     sortPopulation();
-    const best = population[0];
-    finish('maxGenerations', best, getFitness(best));
+    finish('maxGenerations');
     return;
   }
 
   running = true;
   loop();
 }
+
+// =========================================================
+// CONFIG & MESSAGES
+// =========================================================
 
 function buildOperators(ops) {
   const operators = (ops || [])
@@ -479,7 +561,9 @@ function applyConfig(rawConfig) {
   crossoverRate = config.crossoverRate;
   elitismRate = config.elitismRate;
   tournamentSize = config.tournamentSize;
-  treeDepth = config.treeDepth;
+  initDepth = config.treeDepth;
+  maxDepth = Math.max(config.maxTreeDepth, initDepth);
+  linearScaling = config.linearScaling;
   dataMode = config.dataMode;
   dataset = (config.dataset || []).map(p => ({
     x: Number(p.x),
@@ -487,14 +571,19 @@ function applyConfig(rawConfig) {
   }));
 
   points = buildPoints();
+
+  meanY = points.reduce((s, p) => s + p.y, 0) / (points.length || 1);
+  ssTot = points.reduce((s, p) => s + (p.y - meanY) ** 2, 0);
+
   fitnessCache.clear();
 }
 
+// Drop malformed individuals (e.g. from an old checkpoint) and top up.
 function ensurePopulation() {
   population = (population || []).filter(Boolean);
 
   while (population.length < populationSize) {
-    population.push(randomTree());
+    population.push(randomImmigrant());
   }
 }
 

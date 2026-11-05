@@ -13,18 +13,22 @@ It is built for **learning and exploring** how GP works, with light practical us
 
 - **Two data sources:** sample a target formula over an X range, or upload a CSV dataset.
 - **Live evolution** in a Web Worker, so the page stays responsive.
-- **Live visualisation:** data points and the best program's curve on a canvas, plus the best program drawn as an expression tree.
-- **Configurable search:** population size, generations, target R², mutation / crossover / elitism rates, tournament size, tree depth, and 23 selectable operators.
-- **Pause, resume and restore:** stop a run, change parameters, and resume it. The session is checkpointed to IndexedDB, so it can be restored after closing the tab or restarting the browser.
-- **Input validation:** invalid formulas, ranges or parameters are reported before a run starts.
+- **Readable results:** the best program is simplified before it is shown (`(2.469 + ((-2.507 + x*x) - -1.712))` becomes `pow(x, 2) + 1.674`), drawn as an expression tree, and plotted over the data.
+- **Progress chart:** the best and median fit of every generation, on a log scale, against your target.
+- **Export:** copy the best program as a formula, JavaScript, Python or LaTeX.
+- **Share links:** one click copies a link containing the settings, the data (up to 2,000 points) and the best program.
+- **Linear scaling** (on by default): evolution only has to find the *shape* of the data; the best offset and scale are fitted exactly.
+- **Configurable search:** population, generations, target R², crossover / mutation / elitism rates, tournament size, tree depths, and 23 operators with presets.
+- **Pause, resume and restore:** stop a run, change settings, and resume. The session is checkpointed to IndexedDB, so it survives closing the tab or restarting the browser.
+- **Input validation:** invalid formulas, ranges or settings are reported before a run starts.
 
 ---
 
 ## Quick start
 
 1. Open the [live demo](https://bowo-prasetyo.github.io/genetic-programming/#/).
-2. Keep the default target `x*x + 2` and press **Start Evolution**.
-3. Watch the red curve converge onto the cyan points, then try a harder target such as `sin(x) * exp(x/3)` with `sin` and `exp` enabled.
+2. Keep the default target `x*x + 2` and press **Start Evolution**. It is solved in the first generation.
+3. Now try something harder: set the formula to `sin(x) * exp(x/3)`, pick the **Everything** operator preset and press **Start Evolution**. Watch the progress chart fall towards the dashed target line.
 
 ---
 
@@ -32,14 +36,15 @@ It is built for **learning and exploring** how GP works, with light practical us
 
 ### 1. Choose a data source
 
-**Generate From Formula:** enter a target formula and an X range.
+**Generate from formula:** enter a target formula and an X range.
 
-- Formulas are JavaScript expressions in `x`. Math functions and constants are in scope, so `sin(x)`, `pow(x, 2)`, `exp(-x*x)` and `PI * x` work, as does `Math.sin(x)`.
-- Because evolved programs use the same syntax, you can paste a result back in as a new target.
-- **Sample Points** (default 101) are spaced evenly across the X range. The engine trains on exactly these points, and the graph plots exactly these points.
+- Formulas are arithmetic expressions in `x`. Every name on JavaScript's `Math` is available, so `sin(x)`, `pow(x, 2)`, `exp(-x*x)`, `abs(x)` and `PI * x` work, as does `Math.sin(x)`.
+- Nothing else is allowed (no other names, strings, brackets or statements). This keeps formulas from shared links safe to open.
+- Because results use the same syntax, you can paste a result back in as a new target.
+- **Sample points** (default 101) are spaced evenly across the X range. The engine trains on exactly these points, and the graph plots exactly these points.
 - Points where the formula is not finite (for example `1/x` at `x = 0`) are skipped.
 
-**Upload Dataset:** upload a CSV with a header row and two numeric columns:
+**Upload dataset:** upload a CSV with a header row and two numeric columns:
 
 ```csv
 x,y
@@ -48,42 +53,62 @@ x,y
 -3,3
 ```
 
-Rows that are not two finite numbers are ignored. Every valid row is used for training; the graph shows at most 30 of them to keep drawing fast.
+Rows that are not two finite numbers are ignored. Every valid row is used for training; the graph shows at most 60 of them to keep drawing fast.
 
 ### 2. Configure the run
 
-| Parameter       | Meaning                                                                                  | Default |
-| --------------- | ---------------------------------------------------------------------------------------- | ------- |
-| Population Size | Individuals per generation (kept constant for the whole run)                             | 100     |
-| Max Generations | Stop after this many generations                                                         | 1000    |
-| Target R²       | Stop as soon as the best program's R² reaches this value (1 = perfect fit)               | 0.99    |
-| Mutation Rate   | Per-node probability of mutation                                                         | 0.1     |
-| Crossover Rate  | Probability that a child is produced by crossover rather than copying a parent           | 0.7     |
-| Elitism Rate    | Fraction of the best individuals copied unchanged into the next generation               | 0.05    |
-| Tournament Size | Individuals compared in each tournament selection                                        | 5       |
-| Tree Depth      | Maximum depth of randomly generated trees (1–12)                                         | 4       |
-| Operators       | The primitive set the search may use                                                     | `+ - *` |
+Every setting has a short explanation under it in the app.
 
-Available operators:
+| Setting            | Meaning                                                                                       | Default |
+| ------------------ | --------------------------------------------------------------------------------------------- | ------- |
+| Population Size    | Programs per generation (constant for the whole run)                                          | 200     |
+| Max Generations    | Stop after this many generations                                                              | 500     |
+| Target R²          | Stop as soon as the best program reaches this R² (1 = perfect fit)                            | 0.999   |
+| Crossover Rate     | Probability that an offspring is made by subtree crossover rather than copying a parent        | 0.7     |
+| Mutation Rate      | Probability that an offspring is then mutated                                                 | 0.1     |
+| Elitism Rate       | Fraction of the best programs copied unchanged into the next generation                       | 0.05    |
+| Tournament Size    | Programs compared in each selection tournament; larger is greedier                            | 5       |
+| Initial Tree Depth | Maximum depth of the random programs that start the run (1–12)                                | 4       |
+| Max Tree Depth     | Hard depth limit for evolved programs, to stop them bloating (up to 17)                       | 8       |
+| Linear scaling     | Score each program as `a + b·f(x)` with the best-fitting `a` and `b`                          | on      |
+| Operators          | The building blocks the search may use                                                        | `+ - *` |
+
+The defaults were checked with the benchmark described under [Example results](#example-results). Crossover 0.8, mutation 0.2 and elitism 0.02 did slightly worse on the harder targets.
+
+**Operator presets:** Polynomial (`+ - *`), Rational (adds `/`), Trigonometric (adds `sin cos`), Exp / Log (adds `exp log`) and Everything.
+
+All operators:
 
 - Binary: `+`, `-`, `*`, `/`, `pow`
 - Unary: `sin`, `cos`, `tan`, `sinh`, `cosh`, `tanh`, `asin`, `acos`, `atan`, `asinh`, `acosh`, `atanh`, `log` (natural log), `log2`, `log10`, `exp`, `sqrt`, `cbrt`
 
 ### 3. Run, stop, resume
 
-| State   | Buttons                       | Notes                                                    |
-| ------- | ----------------------------- | -------------------------------------------------------- |
-| idle    | **Start Evolution**           | Inputs are editable.                                     |
-| running | **Running…** (disabled), **Stop** | Inputs are locked.                                   |
-| paused  | **Clear Results**, **Resume** | Inputs are editable; Resume applies any changes.         |
+| State   | Buttons                                              | Notes                                            |
+| ------- | ---------------------------------------------------- | ------------------------------------------------ |
+| idle    | **Start Evolution**                                  | Settings are editable.                           |
+| running | **Running…** (disabled), **Stop**                    | Settings are locked.                             |
+| paused  | **Clear Results**, **Resume**, **Copy share link**   | Settings are editable; Resume applies changes.   |
 
 A run pauses on its own when it reaches the target R² or Max Generations, and a status message says which. To keep going after hitting Max Generations, raise it and press **Resume**.
 
-**Clear Results** stops the worker, clears the graph and history, and deletes the stored session.
+**Clear Results** stops the worker, clears the results, and deletes the stored session.
 
-### 4. Restore after closing the browser
+### 4. Read the results
 
-On load, if a stored session exists, the app asks whether to restore it. A restored session comes back paused with its population, generation, best program, settings and dataset. Press **Resume** to continue.
+- **Best program:** the simplified formula. The tabs switch between a plain formula, JavaScript (`const f = (x) => …`), Python (`def f(x): …` using `math`) and LaTeX. **Copy** puts the current tab on the clipboard. Exported code keeps 12 significant digits; the on-screen formula shows 5.
+- **Fit:** the data (cyan) and the best program (red).
+- **Progress:** 1 − R² of the best (red) and median (grey) program in each generation, on a log scale, so the step from R² 0.99 to 0.9999 is as visible as the step from 0 to 0.9. The dashed green line is your target.
+- **Expression tree:** orange operators, green `x`, khaki constants. It scales to fit the page.
+- **Program size:** the number of nodes in the program as shown.
+
+### 5. Share a run
+
+After a run, **Copy share link** copies a link to this page that contains the settings, the dataset (if it has at most 2,000 points) and the best program. Opening it loads them, ready to run, without touching the visitor's own saved session. The population is not included, so the recipient starts a new run rather than continuing yours.
+
+### 6. Restore after closing the browser
+
+On load, if a stored session exists, the app asks whether to restore it. A restored session comes back paused with its population, generation, best program, progress chart, settings and dataset. Press **Resume** to continue.
 
 ---
 
@@ -91,65 +116,83 @@ On load, if a stored session exists, the app asks whether to restore it. A resto
 
 ### Representation
 
-Programs are expression trees. Leaves are the variable `x` or an ephemeral random constant (ERC) drawn from [-10, 10]. Internal nodes are the enabled operators.
+Programs are expression trees. Leaves are the variable `x` or a random constant drawn from [-10, 10]. Internal nodes are the enabled operators.
+
+The first generation is created with *ramped half-and-half*: depths 2 up to Initial Tree Depth, half of them "full" (every branch to the maximum depth) and half "grow" (branches may stop early), so it starts with a wide variety of shapes.
 
 ### Fitness
 
-Each program is scored on every training point:
+Each program `f` is evaluated on every training point and scored by R², the fraction of the data's variance it explains.
+
+With **linear scaling** (Keijzer, 2003), the program is scored as `a + b·f(x)`, where `a` and `b` are the least-squares best fit, computed exactly for each program. Evolution only needs to find the right shape; it never has to stumble onto the right offset and scale by mutating constants. The reported program includes `a` and `b`, folded into its own constants by the simplifier.
 
 ```
 fitness = (1 − R²) + 0.001 × (number of nodes)
 ```
 
-R² rewards explaining the shape of the data rather than just its average, and the small size penalty discourages bloat. A program that produces a non-finite value (for example division by zero) on any training point gets infinite fitness. R² is undefined for a constant target, so constant targets are rejected up front.
+The small size penalty discourages bloat. A program that produces a non-finite value (for example division by zero) on any training point gets infinite fitness. R² is undefined for a constant target, so constant targets are rejected up front.
 
 ### Each generation
 
 1. Sort the population by fitness and report the best program.
 2. Stop if the best R² ≥ Target R², or the generation limit is reached.
-3. Build the next generation of exactly *Population Size* individuals:
+3. Build the next generation of exactly *Population Size* programs:
    - **Elites:** the top *Elitism Rate* fraction, copied unchanged.
-   - **Immigrants:** 10% brand-new random trees, to maintain diversity.
-   - **Offspring:** the rest, bred by tournament selection followed by crossover (with probability *Crossover Rate*) and mutation.
-4. Mutation can replace a subtree, swap an operator, or nudge a constant by up to ±1.
+   - **Immigrants:** 10% brand-new random programs, to maintain diversity.
+   - **Offspring:** the rest. Each picks a parent by tournament selection. With probability *Crossover Rate* a random subtree of that parent is replaced by a random subtree of a second parent (90% of the time an operator node is chosen, so crossover moves real structure). Children deeper than Max Tree Depth are rejected and retried. Then, with probability *Mutation Rate*, the child is mutated.
+4. Mutation is either:
+   - **subtree mutation:** a random subtree is replaced by a new random one; or
+   - **point mutation:** one node changes. An operator becomes another of the same arity, `x` becomes a constant or vice versa, or a constant is nudged by a coarse, medium or fine step (about ±1, ±0.1 or ±0.01 of its size), so constants can be both moved and fine-tuned.
+
+### Simplification
+
+Before a program is shown or exported it is simplified:
+
+- constants are folded;
+- like terms are collected (`x + x` becomes `2 * x`, `x * x` becomes `pow(x, 2)`);
+- constants are distributed over sums;
+- identities such as `u * 1`, `u - u`, `u / u` and `pow(u, 1)` are removed.
+
+The simplified program is then checked against the original on every training point and only used if it computes the same values. The search itself works on the unsimplified programs.
 
 ### Persistence
 
 Sessions are stored in the browser's IndexedDB (`gp-db`):
 
-- `sessions` holds a single checkpoint of the latest run: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program and recent history. It is written whenever the best fitness improves, at least every 10 generations, and on Stop, finish, or page unload.
+- `sessions` holds a single checkpoint of the latest run: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, recent history and the progress chart. It is written whenever the best fitness improves, at least every 10 generations, and on Stop, finish, or page unload.
 - `bestPrograms` keeps a log of each new best program. It is not shown in the UI yet.
 
 Everything stays in your browser; clearing site data deletes it.
 
 ### Known limitations
 
-These are honest constraints of the current engine, and most are on the roadmap:
-
 - **Single input variable** (`x`) only.
-- **Crossover is a simplified positional crossover**, not standard subtree crossover. It mixes parents node by node and is weak for trees containing unary operators.
-- **Constants are found by mutation alone**, which can produce unwieldy expressions such as `(x * 4.211) * 0.712`.
-- **Expressions are not simplified** before being shown.
+- **Constants inside non-linear functions** (the `1/3` in `exp(x/3)`) are found by mutation alone. Linear scaling handles only the outer offset and scale, so these targets are solved less reliably; see [Example results](#example-results).
+- **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
 - **Fixed 50 ms pause between generations**, so the UI can redraw. Long runs are therefore slower than the hardware allows.
 
 ---
 
 ## Example results
 
-These were measured with the default settings (population 100, depth 4, Target R² 0.99, up to 300 generations). Each target was run 10 times with the operators listed. GP is stochastic, so your results will differ from run to run.
+`npm run bench` measures how often the engine reaches R² ≥ 0.999 within 200 generations, using the default settings, population 200, and x in [-3, 3]. Each target is run 20 times. GP is stochastic, so your runs will differ.
 
-| Target          | Operators          | Reached R² ≥ 0.99 | Median generations | Example result                                      |
-| --------------- | ------------------ | ----------------- | ------------------ | --------------------------------------------------- |
-| `x*x + 2`       | `+ - *`            | 10 / 10           | 8                  | `(2.469 + ((-2.507 + (x * x)) - -1.712))`           |
-| `sin(x)`        | `+ - * / sin`      | 10 / 10           | 1                  | `sin(x)`                                            |
-| `exp(x/2)`      | `+ - * / exp`      | 9 / 10            | 49                 | `exp((x * ((-7.609 / 7.460) / (-6.082 + 4.068))))`  |
-| `x*x + 2/x`     | `+ - * /`          | 7 / 10            | 31                 | `(x * (x - ((-1.611 / x) / x)))`                    |
+| Target              | Operators         | Reached (Phase 1 engine) | Reached (this version) | Median generations | Example result (this version)                            |
+| ------------------- | ----------------- | ------------------------ | ---------------------- | ------------------ | -------------------------------------------------------- |
+| `x*x*x - 2*x + 1`   | `+ - *`           | 6 / 20                   | **20 / 20**            | 6                  | `-2 * x + pow(x, 3) + 1`                                 |
+| `3*x*x + 2`         | `+ - *`           | 17 / 20                  | **20 / 20**            | 1                  | `3 * pow(x, 2) + 2`                                      |
+| `x*x + 2/x`         | `+ - * /`         | 19 / 20                  | **20 / 20**            | 11                 | `1.0047 * pow(x, 2) + 1.0047 * (-0.11496 * x + 1.9886) / x + 0.10087` |
+| `exp(-x*x/2)`       | `+ - * / exp`     | **19 / 20**              | 11 / 20                | 54                 | `0.99443 * exp(x / (-1.8551 / x)) + 0.017129`            |
+| `sin(x) + sin(x*x)` | `+ - * / sin cos` | **15 / 20**              | 12 / 20                | 43                 | `sin(pow(x, 2)) + sin(x)`                                |
+| `sin(x) * exp(x/3)` | `+ - * / sin exp` | **7 / 20**               | 5 / 20                 | 10                 | `0.0016783 * sin(x) * pow(x + 8.526, 3) - 0.015182`      |
+| **Total**           |                   | 83 / 120                 | **88 / 120**           |                    |                                                          |
 
-The examples also show the "unsimplified constants" limitation: `(2.469 + (-2.507 + x*x) - -1.712)` is just `x*x + 1.674`.
+What this shows:
 
-To try a real dataset, export two columns as `x,y` from, for example, the [Salary dataset](https://www.kaggle.com/datasets/abhishek14398/salary-dataset-simple-linear-regression) or the [Student Scores dataset](https://www.kaggle.com/datasets/samira1992/student-scores-simple-dataset). Both are close to linear, so `+ - *` is enough.
-
----
+- **Polynomial and rational targets are now solved every time** (60/60, against 42/60), usually within a handful of generations. Linear scaling and subtree crossover do the work here.
+- **Targets with a constant inside a non-linear function** (the `1/2` in `exp(-x*x/2)`, the `1/3` in `exp(x/3)`) **are solved less often than in Phase 1** (28/60, against 41/60). Phase 1 nudged every constant in every offspring, which happened to suit these targets. Better constant optimisation is on the roadmap.
+- Even when a run misses the strict target, it usually finds an R² above 0.99.
+- Some results are approximations rather than the true formula. The last example is a cubic times `sin(x)`, which fits `sin(x)·e^(x/3)` on [-3, 3]. Some keep visible structure the simplifier cannot reduce, such as `x / (-1.8551 / x)`, which equals `-x²/1.8551`.
 
 ## Running locally
 
@@ -163,7 +206,7 @@ Then open <http://localhost:8000>. A local web server is needed because browsers
 
 ### Tests
 
-The engine and shared helpers have a headless test suite that runs the real `worker.js` in Node (version 18 or later), with no browser and no dependencies:
+The engine and shared helpers (simplifier, exporters, share links, formula checks) have a headless test suite that runs the real `worker.js` in Node (version 18 or later), with no browser and no dependencies:
 
 ```bash
 npm test
@@ -176,7 +219,7 @@ Tests run on every push and pull request via GitHub Actions.
 | File            | Purpose                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------- |
 | `index.html`    | Page shell; loads pinned versions of Vue, Vue Router and Marked from jsDelivr                 |
-| `shared.js`     | Code shared by UI and engine: expression evaluation, formula sampling, config validation      |
+| `shared.js`     | Code shared by UI and engine: evaluation, formula sampling and checks, simplification, export, share links, config validation |
 | `worker.js`     | The GP engine (runs in a Web Worker)                                                           |
 | `app.js`        | Vue UI: inputs, visualisation, persistence, About page                                        |
 | `style.css`     | Styles                                                                                        |
@@ -188,19 +231,17 @@ The About page renders this README, fetched live from the `main` branch.
 
 ## Roadmap
 
-**Next: make the core loop excellent**
+**Done**
 
-- Standard subtree crossover and mutation with a size/depth limit
-- Fit constants with linear scaling, so results like `9.6 * (... )` become clean
-- Simplify expressions before displaying them
-- Fitness-over-time chart and operator presets (Arithmetic, Trig, Exp/Log)
-- Export the best program (JavaScript / Python / LaTeX) and share sessions by URL
-- Settings above results; a tree view that scales to fit
+- Phase 1, restore trust: engine bug fixes, input validation, tests and CI, accurate documentation.
+- Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
 
-**Later: one differentiator at a time**
+**Next: one differentiator at a time**
 
 - Multi-variable regression from multi-column CSVs
 - Animated replay of a run, for teaching
+- Faster runs: several generations per UI update instead of a fixed pause
+- Local optimisation of constants inside non-linear functions
 
 **Research ideas (not planned):** strongly typed GP, automatically defined functions, grammar-guided GP, semantic GP, multi-objective GP, island models (including across browsers via WebRTC), WASM/GPU acceleration, neural-GP hybrids, and full program synthesis with control flow.
 
