@@ -590,13 +590,33 @@ const FUNCTION_NAMES = {
   python: (op) => `math.${op}`
 };
 
-// Infix with only the parentheses that are needed.
-// format: 'plain' (default; also valid as a target formula), 'js', 'python'
-function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
+// The positive part of a negative constant or -u, otherwise null.
+function negatedPart(node) {
+  if (isConstant(node) && Number(node) < 0) return num(-Number(node));
+  if (isNegation(node)) return node.right;
+  return null;
+}
+
+// a + (-u)  ->  a - u   and   a - (-u)  ->  a + u
+function foldSigns(node) {
+  if (!isTerminal(node) && (node.op === '+' || node.op === '-')) {
+    const pos = negatedPart(node.right);
+
+    if (pos !== null) {
+      return { op: node.op === '+' ? '-' : '+', left: node.left, right: pos };
+    }
+  }
+
+  return node;
+}
+
+function infix(node, format, digits) {
+  node = foldSigns(node);
+
   const fn = FUNCTION_NAMES[format];
 
   const wrap = (child, needParens) => {
-    const s = toInfix(child, format, digits);
+    const s = infix(child, format, digits);
     return needParens ? `(${s})` : s;
   };
 
@@ -605,7 +625,7 @@ function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
   }
 
   if (node.child) {
-    return `${fn(node.op)}(${toInfix(node.child, format, digits)})`;
+    return `${fn(node.op)}(${infix(node.child, format, digits)})`;
   }
 
   if (node.op === 'pow') {
@@ -613,11 +633,11 @@ function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
       return `${wrap(node.left, precedenceOf(node.left) <= 3)} ** ${wrap(node.right, precedenceOf(node.right) <= 3)}`;
     }
 
-    return `${fn('pow')}(${toInfix(node.left, format, digits)}, ${toInfix(node.right, format, digits)})`;
+    return `${fn('pow')}(${infix(node.left, format, digits)}, ${infix(node.right, format, digits)})`;
   }
 
   if (isReciprocalProduct(node)) {
-    return toInfix({ op: '/', left: node.left, right: node.right.right }, format, digits);
+    return infix({ op: '/', left: node.left, right: node.right.right }, format, digits);
   }
 
   if (isNegation(node)) {
@@ -635,6 +655,39 @@ function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
   return `${left} ${node.op} ${right}`;
 }
 
+// Coefficients that print as 1 or -1 at the chosen precision (e.g.
+// 0.9999999) are dropped or turned into a minus sign, so the printed
+// formula never shows "1 * u".
+function roundCoefficients(node, digits) {
+  if (isTerminal(node)) return node;
+
+  if (node.child) {
+    return { op: node.op, child: roundCoefficients(node.child, digits) };
+  }
+
+  const left = roundCoefficients(node.left, digits);
+  const right = roundCoefficients(node.right, digits);
+
+  if (node.op === '*' && isConstant(left)) {
+    const shown = formatNumber(left, digits);
+
+    if (shown === '1') return right;
+    if (shown === '-1') return { op: '*', left: '-1', right };
+  }
+
+  return { op: node.op, left, right };
+}
+
+// Infix with only the parentheses that are needed.
+// format: 'plain' (default; also valid as a target formula), 'js', 'python'
+function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
+  return infix(roundCoefficients(node, digits), format, digits);
+}
+
+function toLatex(node, digits = DISPLAY_DIGITS) {
+  return latex(roundCoefficients(node, digits), digits);
+}
+
 const LATEX_FUNCTIONS = {
   sin: '\\sin', cos: '\\cos', tan: '\\tan',
   sinh: '\\sinh', cosh: '\\cosh', tanh: '\\tanh',
@@ -643,14 +696,15 @@ const LATEX_FUNCTIONS = {
   log: '\\ln', log2: '\\log_{2}', log10: '\\log_{10}'
 };
 
-function toLatex(node, digits = DISPLAY_DIGITS) {
+function latex(node, digits) {
+  node = foldSigns(node);
 
   if (isReciprocalProduct(node)) {
-    return toLatex({ op: '/', left: node.left, right: node.right.right }, digits);
+    return latex({ op: '/', left: node.left, right: node.right.right }, digits);
   }
 
   if (isNegation(node)) {
-    const inner = toLatex(node.right, digits);
+    const inner = latex(node.right, digits);
     return `-${precedenceOf(node.right) < 2 ? `\\left(${inner}\\right)` : inner}`;
   }
 
@@ -666,7 +720,7 @@ function toLatex(node, digits = DISPLAY_DIGITS) {
   }
 
   if (node.child) {
-    const inner = toLatex(node.child, digits);
+    const inner = latex(node.child, digits);
 
     switch (node.op) {
       case 'exp': return `e^{${inner}}`;
@@ -677,8 +731,8 @@ function toLatex(node, digits = DISPLAY_DIGITS) {
     return `${LATEX_FUNCTIONS[node.op]}${paren(inner)}`;
   }
 
-  const left = toLatex(node.left, digits);
-  const right = toLatex(node.right, digits);
+  const left = latex(node.left, digits);
+  const right = latex(node.right, digits);
   const lp = precedenceOf(node.left);
   const rp = precedenceOf(node.right);
 

@@ -191,3 +191,13 @@ test('-1 * u prints as -u, with parentheses where needed', () => {
   const f = new Function(`${s.exportProgram(tree, 'js')}; return f;`)();
   assert.equal(f(2), s.evaluateTree(tree, 2));
 });
+
+test('coefficients that print as 1 or -1 are not shown as "1 * u"', () => {
+  const tree = T('+', T('*', '0.99999999', U('sin', 'x')), T('*', '-1.0000001', 'x'));
+  assert.equal(s.toInfix(tree), 'sin(x) - x');
+  assert.equal(s.toLatex(tree), '\\sin\\left(x\\right) - x');
+  // export keeps full precision
+  assert.match(s.exportProgram(tree, 'js'), /0\.99999999 \* Math\.sin\(x\)/);
+  // inside a subtraction the dropped coefficient keeps its parentheses
+  assert.equal(s.toInfix(T('-', 'x', T('*', '1.0000000001', T('+', 'x', '1')))), 'x - (x + 1)');
+});
