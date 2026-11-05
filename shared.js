@@ -568,10 +568,18 @@ function isReciprocalProduct(node) {
     constValue(node.right.left) === 1;
 }
 
+// -1 * u: printed as -u
+function isNegation(node) {
+  return !isTerminal(node) && node.op === '*' && constValue(node.left) === -1;
+}
+
+// 0 marks a leading minus sign (negative constant or -u), which needs
+// parentheses anywhere but the leftmost position.
 function precedenceOf(node) {
   if (isTerminal(node)) {
     return isConstant(node) && Number(node) < 0 ? 0 : 9;
   }
+  if (isNegation(node)) return 0;
   if (node.op === 'pow') return 3;
   return PRECEDENCE[node.op] || 9; // unary function calls are atomic
 }
@@ -612,6 +620,10 @@ function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
     return toInfix({ op: '/', left: node.left, right: node.right.right }, format, digits);
   }
 
+  if (isNegation(node)) {
+    return `-${wrap(node.right, precedenceOf(node.right) < 2)}`;
+  }
+
   const p = PRECEDENCE[node.op];
   const lp = precedenceOf(node.left);
   const rp = precedenceOf(node.right);
@@ -635,6 +647,11 @@ function toLatex(node, digits = DISPLAY_DIGITS) {
 
   if (isReciprocalProduct(node)) {
     return toLatex({ op: '/', left: node.left, right: node.right.right }, digits);
+  }
+
+  if (isNegation(node)) {
+    const inner = toLatex(node.right, digits);
+    return `-${precedenceOf(node.right) < 2 ? `\\left(${inner}\\right)` : inner}`;
   }
 
   const paren = (s) => `\\left(${s}\\right)`;

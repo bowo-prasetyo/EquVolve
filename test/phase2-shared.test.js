@@ -181,3 +181,13 @@ test('merges powers and reciprocal terms', () => {
   // x * pow(x, -1)  ->  1
   assert.equal(s.toInfix(s.simplifyTree(T('*', 'x', T('pow', 'x', '-1')))), '1');
 });
+
+test('-1 * u prints as -u, with parentheses where needed', () => {
+  const tree = T('+', T('*', '-1', 'x'), T('*', '2', T('*', '-1', T('+', 'x', '1'))));
+  assert.equal(s.toInfix(tree), '-x + 2 * (-(x + 1))');
+  sameValues(tree, s.simplifyTree(tree));
+  assert.equal(s.toInfix(s.simplifyTree(T('-', '1', 'x'))), '-x + 1');
+  assert.equal(s.toLatex(T('*', '-1', T('+', 'x', '1'))), '-\\left(x + 1\\right)');
+  const f = new Function(`${s.exportProgram(tree, 'js')}; return f;`)();
+  assert.equal(f(2), s.evaluateTree(tree, 2));
+});
