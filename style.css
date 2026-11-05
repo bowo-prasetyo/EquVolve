@@ -48,3 +48,15 @@ svg {
   border-radius: 6px;
   font-family: monospace;
 }
+
+.error {
+  margin-bottom: 12px;
+  border-left: 4px solid #e55;
+  color: #fbb;
+}
+
+.status {
+  margin-bottom: 12px;
+  border-left: 4px solid #5a5;
+  color: #cfc;
+}

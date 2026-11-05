@@ -64,8 +64,29 @@ const Home = {
           />
         </div>
       
+        <div style="margin-bottom:10px;">
+          <label><b>Sample Points:</b></label>
+
+          <input
+            type="number"
+            v-model.number="sampleCount"
+            min="2"
+            step="1"
+            style="width:80px; padding:8px; margin-left:10px;"
+            :disabled="isRunning"
+          />
+
+          <span style="margin-left:10px; color:#aaa;">
+            evenly spaced across the X Range; used for both training and the graph
+          </span>
+        </div>
+
         <div class="code" style="margin-top:15px;">
           Current Target: y = {{ targetFormula }}
+          <br>
+          <span style="color:#aaa;">
+            Math functions can be written as sin(x), pow(x, 2), PI ... or Math.sin(x).
+          </span>
         </div>
       </div>
 
@@ -103,6 +124,14 @@ const Home = {
         </div>
       </div>
     </div>
+
+<div v-if="errorMessages.length" class="code error">
+  <div v-for="(msg, i) in errorMessages" :key="i">{{ msg }}</div>
+</div>
+
+<div v-if="statusMessage" class="code status">
+  {{ statusMessage }}
+</div>
 
 <button
   @click="mainAction"
@@ -167,6 +196,8 @@ const Home = {
     </div>
 
     <div class="stats">
+      <div><b>Generation:</b> {{ generation }}</div>
+      <div><b>Best R<sup>2</sup>:</b> {{ bestR2 }}</div>
       <div><b>Best Fitness:</b> {{ bestFitness }}</div>
       <div><b>Best Program:</b></div>
 
@@ -217,15 +248,20 @@ const Home = {
         </div>
   
         <div style="margin-bottom:10px;">
-        <label><b>Min Error:</b></label>
-    
+        <label><b>Target R<sup>2</sup>:</b></label>
+
         <input
           type="number"
-          v-model.number="minError"
-          step="0.01"
+          v-model.number="targetR2"
+          step="0.001"
+          max="1"
           style="width:120px; padding:8px; margin-left:10px;"
           :disabled="isRunning"
         />
+
+        <span style="margin-left:10px; color:#aaa;">
+          evolution stops once the best program reaches this R² (1 = perfect fit)
+        </span>
       </div>
       
       <div style="margin-bottom:10px;">
@@ -398,13 +434,15 @@ const Home = {
         right: '1'
       },
       bestFitness: 0,
+      bestR2: null,
       db: null,
       expressionText: '',
       targetFormula: 'x*x + 2',
       minX: -5,
       maxX: 5,
       populationSize: 100,
-      minError: 0.01,
+      targetR2: 0.99,
+      sampleCount: DEFAULT_SAMPLE_COUNT,
       maxGenerations: 1000,
       enabledOperators: ['+', '-', '*'],
       mutationRate: 0.1,
@@ -419,11 +457,14 @@ const Home = {
       // idle
       // running
       // paused
-      checkpointInterval: 1,
-      hasRestorableSession: false,
-      eliteCheckpointRate: 0.2,
+      // a checkpoint is written whenever the best fitness improves,
+      // and at least every `checkpointInterval` generations regardless
+      checkpointInterval: 10,
+      lastCheckpointGeneration: 0,
       lastCheckpointFitness: Infinity,
-      lastSavedBestFitness: Infinity
+      lastSavedBestFitness: Infinity,
+      statusMessage: '',
+      errorMessages: []
     };
   },
 
@@ -440,32 +481,17 @@ const Home = {
         return this.uploadedData;
       }
 
-      // formula mode
-      const data = [];
-
-      for (let x = this.minX; x <= this.maxX; x += 0.5) {
-
-        let y = 0;
-
-        try {
-          y = Function(
-            'x',
-            `return ${this.targetFormula};`
-          )(x);
-
-        } catch (e) {
-          continue;
-        }
-
-        if (Number.isFinite(y)) {
-          data.push({
-            x,
-            y
-          });
-        }
+      // formula mode: the exact grid the engine trains on
+      try {
+        return generateFormulaSamples(
+          this.targetFormula,
+          this.minX,
+          this.maxX,
+          this.sampleCount
+        );
+      } catch (e) {
+        return [];
       }
-
-      return data;
     },
 
     isRunning() {
@@ -512,6 +538,12 @@ const Home = {
 
   },
 
+  created() {
+    // Kept off the reactive data on purpose: it is replaced every
+    // generation and is only needed for checkpoints.
+    this.latestPopulation = [];
+  },
+
   mounted() {
     this.initDB();
     this.drawCanvas();
@@ -522,7 +554,7 @@ const Home = {
         if (
           this.evolutionState === 'running'
         ) {
-          this.saveCheckpoint();
+          this.saveCheckpoint(true);
         }
       }
     );
@@ -585,7 +617,8 @@ const Home = {
           x,
           y,
           label: node,
-          color: 'lightgreen',
+          // variable vs. ERC constant
+          color: node === 'x' ? 'lightgreen' : 'khaki',
           parent
         });
 
@@ -696,37 +729,66 @@ const Home = {
       });
     },
 
+    buildConfig() {
+      return {
+        targetFormula: this.targetFormula,
+        minX: this.minX,
+        maxX: this.maxX,
+        sampleCount: this.sampleCount,
+        populationSize: this.populationSize,
+        targetR2: this.targetR2,
+        maxGenerations: this.maxGenerations,
+        operators: [...this.enabledOperators],
+        mutationRate: this.mutationRate,
+        crossoverRate: this.crossoverRate,
+        elitismRate: this.elitismRate,
+        tournamentSize: this.tournamentSize,
+        treeDepth: this.treeDepth,
+        dataMode: this.dataMode,
+        dataset: JSON.parse(JSON.stringify(this.uploadedData))
+      };
+    },
+
+    // Returns the config if valid, otherwise shows the problems and
+    // returns null.
+    validatedConfig() {
+      const config = this.buildConfig();
+      const errors = validateConfig(config);
+
+      this.errorMessages = errors;
+
+      return errors.length ? null : config;
+    },
+
     startEvolution() {
+
+      const config = this.validatedConfig();
+
+      if (!config) {
+        return;
+      }
+
       if (this.worker) {
         this.worker.terminate();
       }
 
       this.evolutionState = 'running';
+      this.statusMessage = '';
 
       this.generation = 0;
       this.history = [];
+      this.latestPopulation = [];
+      this.lastCheckpointFitness = Infinity;
+      this.lastSavedBestFitness = Infinity;
+      this.lastCheckpointGeneration = 0;
+
       this.worker = new Worker('worker.js');
 
       this.bindWorker();
 
       this.worker.postMessage({
         type: 'start',
-        config: {
-          targetFormula: this.targetFormula,
-          minX: this.minX,
-          maxX: this.maxX,
-          populationSize: this.populationSize,
-          minError: this.minError,
-          maxGenerations: this.maxGenerations,
-          operators: [...this.enabledOperators],
-          mutationRate: this.mutationRate,
-          crossoverRate: this.crossoverRate,
-          elitismRate: this.elitismRate,
-          tournamentSize: this.tournamentSize,
-          treeDepth: this.treeDepth,
-          dataMode: this.dataMode,
-          dataset: JSON.parse(JSON.stringify(this.uploadedData))
-        }
+        config
       });
     },
 
@@ -741,6 +803,10 @@ const Home = {
       });
 
       this.evolutionState = 'paused';
+      this.statusMessage = 'Paused.';
+
+      // make sure the paused state survives a browser shutdown
+      this.saveCheckpoint(true);
     },
 
     resumeEvolution() {
@@ -749,143 +815,20 @@ const Home = {
         return;
       }
 
+      const config = this.validatedConfig();
+
+      if (!config) {
+        return;
+      }
+
       this.evolutionState = 'running';
+      this.statusMessage = '';
 
       this.worker.postMessage({
         type: 'resume',
-
-        config: {
-
-          targetFormula: this.targetFormula,
-          minX: this.minX,
-          maxX: this.maxX,
-          populationSize: this.populationSize,
-          minError: this.minError,
-          maxGenerations: this.maxGenerations,
-          operators: [...this.enabledOperators],
-          mutationRate: this.mutationRate,
-          crossoverRate: this.crossoverRate,
-          elitismRate: this.elitismRate,
-          tournamentSize: this.tournamentSize,
-          treeDepth: this.treeDepth,
-          dataMode: this.dataMode,
-          dataset: JSON.parse(
-            JSON.stringify(this.uploadedData)
-          )
-        }
+        config
       });
 
-    },
-
-    evaluateTree(node, x) {
-
-      if (node == null) {
-        return 0;
-      }
-
-      // terminal
-      if (typeof node === 'string') {
-
-        if (node === 'x') {
-          return x;
-        }
-
-        return Number(node);
-      }
-
-      // unary
-      if (node.child) {
-
-        const v =
-          this.evaluateTree(node.child, x);
-
-        switch (node.op) {
-
-          case 'sin':
-            return Math.sin(v);
-
-          case 'cos':
-            return Math.cos(v);
-
-          case 'tan':
-            return Math.tan(v);
-
-          case 'sinh':
-            return Math.sinh(v);
-
-          case 'cosh':
-            return Math.cosh(v);
-
-          case 'tanh':
-            return Math.tanh(v);
-
-          case 'asin':
-            return Math.asin(v);
-
-          case 'acos':
-            return Math.acos(v);
-
-          case 'atan':
-            return Math.atan(v);
-
-          case 'asinh':
-            return Math.asinh(v);
-
-          case 'acosh':
-            return Math.acosh(v);
-
-          case 'atanh':
-            return Math.atanh(v);
-
-          case 'log':
-            return Math.log(v);
-
-          case 'log2':
-            return Math.log2(v);
-
-          case 'log10':
-            return Math.log10(v);
-
-          case 'exp':
-            return Math.exp(v);
-
-          case 'sqrt':
-            return Math.sqrt(v);
-
-          case 'cbrt':
-            return Math.cbrt(v);
-
-          default:
-            return 0;
-        }
-      }
-
-      // binary
-      const left =
-        this.evaluateTree(node.left, x);
-
-      const right =
-        this.evaluateTree(node.right, x);
-
-      switch (node.op) {
-
-        case '+':
-          return left + right;
-
-        case '-':
-          return left - right;
-
-        case '*':
-          return left * right;
-
-        case '/':
-          return left / right;
-
-        case 'pow':
-          return Math.pow(left, right);
-      }
-
-      return 0;
     },
 
     drawCanvas() {
@@ -947,7 +890,7 @@ const Home = {
           minX + (px / canvas.width) * (maxX - minX);
 
         const y =
-          this.evaluateTree(this.best, logicalX);
+          evaluateTree(this.best, logicalX);
 
         if (!Number.isFinite(y)) continue;
 
@@ -1123,6 +1066,20 @@ const Home = {
 
       this.generation = 0;
 
+      this.bestR2 = null;
+
+      this.latestPopulation = [];
+
+      this.lastCheckpointFitness = Infinity;
+
+      this.lastSavedBestFitness = Infinity;
+
+      this.lastCheckpointGeneration = 0;
+
+      this.statusMessage = '';
+
+      this.errorMessages = [];
+
       // clear graph
 
       this.drawCanvas();
@@ -1161,23 +1118,27 @@ const Home = {
 
     },
 
-    async saveCheckpoint() {
+    saveCheckpoint(force = false) {
 
       if (!this.db || !this.worker) {
         return;
       }
 
-      // save only if improved
+      const improved =
+        this.bestFitness < this.lastCheckpointFitness;
 
-      if (
-        this.bestFitness >=
-        this.lastCheckpointFitness
-      ) {
+      const due =
+        this.generation - this.lastCheckpointGeneration >=
+        this.checkpointInterval;
+
+      if (!force && !improved && !due) {
         return;
       }
 
       this.lastCheckpointFitness =
-        this.bestFitness;
+        Math.min(this.lastCheckpointFitness, this.bestFitness);
+
+      this.lastCheckpointGeneration = this.generation;
 
       // strip + compress
       const compactPopulation =
@@ -1202,6 +1163,8 @@ const Home = {
 
         bestFitness: this.bestFitness,
 
+        bestR2: this.bestR2,
+
         history: JSON.parse(
           JSON.stringify(
             this.history
@@ -1214,37 +1177,7 @@ const Home = {
 
         config: {
 
-          targetFormula: this.targetFormula,
-
-          minX: this.minX,
-
-          maxX: this.maxX,
-
-          populationSize: this.populationSize,
-
-          minError: this.minError,
-
-          maxGenerations: this.maxGenerations,
-
-          operators: [...this.enabledOperators],
-
-          mutationRate: this.mutationRate,
-
-          crossoverRate: this.crossoverRate,
-
-          elitismRate: this.elitismRate,
-
-          tournamentSize: this.tournamentSize,
-
-          treeDepth: this.treeDepth,
-
-          dataMode: this.dataMode,
-
-          dataset: JSON.parse(
-            JSON.stringify(
-              this.uploadedData
-            )
-          ),
+          ...this.buildConfig(),
 
           uploadedFileName: this.uploadedFileName
 
@@ -1284,8 +1217,6 @@ const Home = {
 
         const result = request.result;
 
-        this.hasRestorableSession = !!result;
-
         if (!result) {
           return;
         }
@@ -1313,7 +1244,13 @@ const Home = {
         );
 
       this.bestFitness =
-        state.bestFitness || 0;
+        state.bestFitness ?? 0;
+
+      this.bestR2 =
+        state.bestR2 ?? null;
+
+      this.statusMessage =
+        `Restored session at generation ${this.generation}. Press Resume to continue.`;
 
       this.history =
         state.history || [];
@@ -1324,50 +1261,26 @@ const Home = {
       this.evolutionState =
         'paused';
 
+      // older sessions stored minError instead of targetR2
       const config =
-        state.config || {};
+        normalizeConfig(state.config);
 
-      this.targetFormula =
-        config.targetFormula || 'x*x + 2';
-
-      this.minX =
-        config.minX ?? -5;
-
-      this.maxX =
-        config.maxX ?? 5;
-
-      this.populationSize =
-        config.populationSize || 100;
-
-      this.minError =
-        config.minError || 0.01;
-
-      this.maxGenerations =
-        config.maxGenerations || 1000;
-
-      this.enabledOperators =
-        config.operators || ['+', '-', '*'];
-
-      this.mutationRate =
-        config.mutationRate || 0.1;
-
-      this.crossoverRate =
-        config.crossoverRate || 0.7;
-
-      this.elitismRate =
-        config.elitismRate || 0.05;
-
-      this.tournamentSize =
-        config.tournamentSize || 5;
-
-      this.treeDepth =
-        config.treeDepth || 4;
-
-      this.dataMode =
-        config.dataMode || 'formula';
-
-      this.uploadedData =
-        config.dataset || [];
+      // use ?? so legitimate zero values (e.g. mutation rate 0) survive
+      this.targetFormula = config.targetFormula ?? 'x*x + 2';
+      this.minX = config.minX ?? -5;
+      this.maxX = config.maxX ?? 5;
+      this.sampleCount = config.sampleCount ?? DEFAULT_SAMPLE_COUNT;
+      this.populationSize = config.populationSize ?? 100;
+      this.targetR2 = config.targetR2 ?? 0.99;
+      this.maxGenerations = config.maxGenerations ?? 1000;
+      this.enabledOperators = config.operators ?? ['+', '-', '*'];
+      this.mutationRate = config.mutationRate ?? 0.1;
+      this.crossoverRate = config.crossoverRate ?? 0.7;
+      this.elitismRate = config.elitismRate ?? 0.05;
+      this.tournamentSize = config.tournamentSize ?? 5;
+      this.treeDepth = config.treeDepth ?? 4;
+      this.dataMode = config.dataMode ?? 'formula';
+      this.uploadedData = config.dataset ?? [];
 
       this.uploadedFileName =
         config.uploadedFileName ||
@@ -1382,6 +1295,9 @@ const Home = {
 
       this.lastCheckpointFitness =
         this.bestFitness;
+
+      this.lastCheckpointGeneration =
+        this.generation;
       
       this.lastSavedBestFitness =
         this.bestFitness;
@@ -1417,6 +1333,8 @@ const Home = {
 
           this.bestFitness = msg.fitness;
 
+          this.bestR2 = msg.r2;
+
           this.expressionText = msg.expression;
 
           this.generation = msg.generation;
@@ -1440,19 +1358,19 @@ const Home = {
 
           this.saveBest();
 
-          if (
-            this.generation %
-            this.checkpointInterval === 0
-          ) {
-            this.saveCheckpoint();
-          }
+          this.saveCheckpoint();
         }
 
         if (msg.type === 'finished') {
 
           this.evolutionState = 'paused';
 
-          this.saveCheckpoint();
+          this.statusMessage =
+            msg.reason === 'targetReached' ?
+            `Target R² reached at generation ${msg.generation}.` :
+            `Stopped at Max Generations (${msg.generation}). Increase Max Generations and press Resume to continue.`;
+
+          this.saveCheckpoint(true);
         }
       };
     },
@@ -1518,18 +1436,6 @@ const Home = {
 
         right: this.decompressTree(node[2])
       };
-    },
-
-    stripPopulation(population) {
-
-      return population.map(individual => ({
-
-        tree: this.compressTree(
-          individual.tree
-        ),
-
-        fitness: individual.fitness
-      }));
     }
   }
 };
