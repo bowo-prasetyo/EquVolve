@@ -73,7 +73,7 @@ Every setting has a short explanation under it in the app.
 | Linear scaling     | Score each program as `a + b·f(x)` with the best-fitting `a` and `b`                          | on      |
 | Operators          | The building blocks the search may use                                                        | `+ - *` |
 
-The defaults were chosen with the benchmark described under [Example results](#example-results).
+The defaults were checked with the benchmark described under [Example results](#example-results). Crossover 0.8, mutation 0.2 and elitism 0.02 did slightly worse on the harder targets.
 
 **Operator presets:** Polynomial (`+ - *`), Rational (adds `/`), Trigonometric (adds `sin cos`), Exp / Log (adds `exp log`) and Everything.
 
@@ -167,7 +167,7 @@ Everything stays in your browser; clearing site data deletes it.
 ### Known limitations
 
 - **Single input variable** (`x`) only.
-- **Constants inside non-linear functions** (the `1/3` in `exp(x/3)`) are found by mutation alone. Linear scaling handles only the outer offset and scale, so such targets take longer and do not always reach a strict target R².
+- **Constants inside non-linear functions** (the `1/3` in `exp(x/3)`) are found by mutation alone. Linear scaling handles only the outer offset and scale, so these targets are solved less reliably; see [Example results](#example-results).
 - **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
 - **Fixed 50 ms pause between generations**, so the UI can redraw. Long runs are therefore slower than the hardware allows.
 
@@ -175,9 +175,24 @@ Everything stays in your browser; clearing site data deletes it.
 
 ## Example results
 
-Results vary from run to run because GP is stochastic. To measure the engine yourself, run the benchmark (`npm run bench`). It evolves six targets 20 times each with the default settings and prints a table like the one that will appear here.
+`npm run bench` measures how often the engine reaches R² ≥ 0.999 within 200 generations, using the default settings, population 200, and x in [-3, 3]. Each target is run 20 times. GP is stochastic, so your runs will differ.
 
----
+| Target              | Operators         | Reached (Phase 1 engine) | Reached (this version) | Median generations | Example result (this version)                            |
+| ------------------- | ----------------- | ------------------------ | ---------------------- | ------------------ | -------------------------------------------------------- |
+| `x*x*x - 2*x + 1`   | `+ - *`           | 6 / 20                   | **20 / 20**            | 6                  | `-2 * x + pow(x, 3) + 1`                                 |
+| `3*x*x + 2`         | `+ - *`           | 17 / 20                  | **20 / 20**            | 1                  | `3 * pow(x, 2) + 2`                                      |
+| `x*x + 2/x`         | `+ - * /`         | 19 / 20                  | **20 / 20**            | 11                 | `1.0047 * pow(x, 2) + 1.0047 * (-0.11496 * x + 1.9886) / x + 0.10087` |
+| `exp(-x*x/2)`       | `+ - * / exp`     | **19 / 20**              | 11 / 20                | 54                 | `0.99443 * exp(x / (-1.8551 / x)) + 0.017129`            |
+| `sin(x) + sin(x*x)` | `+ - * / sin cos` | **15 / 20**              | 12 / 20                | 43                 | `sin(pow(x, 2)) + sin(x)`                                |
+| `sin(x) * exp(x/3)` | `+ - * / sin exp` | **7 / 20**               | 5 / 20                 | 10                 | `0.0016783 * sin(x) * pow(x + 8.526, 3) - 0.015182`      |
+| **Total**           |                   | 83 / 120                 | **88 / 120**           |                    |                                                          |
+
+What this shows:
+
+- **Polynomial and rational targets are now solved every time** (60/60, against 42/60), usually within a handful of generations. Linear scaling and subtree crossover do the work here.
+- **Targets with a constant inside a non-linear function** (the `1/2` in `exp(-x*x/2)`, the `1/3` in `exp(x/3)`) **are solved less often than in Phase 1** (28/60, against 41/60). Phase 1 nudged every constant in every offspring, which happened to suit these targets. Better constant optimisation is on the roadmap.
+- Even when a run misses the strict target, it usually finds an R² above 0.99.
+- Some results are approximations rather than the true formula. The last example is a cubic times `sin(x)`, which fits `sin(x)·e^(x/3)` on [-3, 3]. Some keep visible structure the simplifier cannot reduce, such as `x / (-1.8551 / x)`, which equals `-x²/1.8551`.
 
 ## Running locally
 
