@@ -165,3 +165,19 @@ test('normalizeConfig fills Phase 2 settings for older sessions', () => {
   assert.equal(c.maxTreeDepth, 12);
   assert.equal(c.linearScaling, true);
 });
+
+test('merges powers and reciprocal terms', () => {
+  // 0.5 * pow(x, 2) * x  ->  0.5 * pow(x, 3)
+  const cube = T('*', T('*', '0.5', T('pow', 'x', '2')), 'x');
+  assert.equal(s.toInfix(s.simplifyTree(cube)), '0.5 * pow(x, 3)');
+
+  // (2 * 0.5) / x + (3 * 2) / x  ->  7 / x
+  const recip = T('+', T('/', T('*', '2', '0.5'), 'x'), T('/', T('*', '3', '2'), 'x'));
+  const out = s.simplifyTree(recip);
+  assert.equal(s.toInfix(out), '7 / x');
+  assert.equal(s.toLatex(out), '\\frac{7}{x}');
+  sameValues(recip, out);
+
+  // x * pow(x, -1)  ->  1
+  assert.equal(s.toInfix(s.simplifyTree(T('*', 'x', T('pow', 'x', '-1')))), '1');
+});

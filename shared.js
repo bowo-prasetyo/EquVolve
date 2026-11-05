@@ -386,13 +386,18 @@ function buildProduct(node) {
       continue;
     }
 
-    const key = treeToString(f);
+    // pow(u, k) with a constant k counts as k factors of u
+    const exponent = !isTerminal(f) && f.op === 'pow' ? constValue(f.right) : null;
+    const base = exponent !== null ? f.left : f;
+    const power = exponent !== null ? exponent : 1;
+
+    const key = treeToString(base);
     const g = groups.get(key);
 
     if (g) {
-      g.power += 1;
+      g.power += power;
     } else {
-      groups.set(key, { power: 1, node: f });
+      groups.set(key, { power, node: base });
     }
   }
 
@@ -403,6 +408,7 @@ function buildProduct(node) {
   let out = null;
 
   for (const { power, node: f } of groups.values()) {
+    if (power === 0) continue;
     const factor = power === 1 ? f : { op: 'pow', left: f, right: num(power) };
     out = out === null ? factor : { op: '*', left: out, right: factor };
   }
@@ -475,6 +481,18 @@ function simplifyOnce(node) {
         return '0';
       }
 
+      // (c * u) / v  ->  c * (u / v), and c / v  ->  c * (1 / v), so
+      // coefficients merge and like terms such as 2/x + 3/x combine
+      const { coef, rest } = splitCoefficient(n.left);
+
+      if (coef !== 1) {
+        return buildProduct({
+          op: '*',
+          left: num(coef),
+          right: { op: '/', left: rest === null ? '1' : rest, right: n.right }
+        });
+      }
+
       if (treeToString(n.left) === treeToString(n.right)) {
         return '1';
       }
@@ -543,6 +561,13 @@ function formatNumber(value, digits) {
 
 const PRECEDENCE = { '+': 1, '-': 1, '*': 2, '/': 2 };
 
+// u * (1 / v): printed as u / v
+function isReciprocalProduct(node) {
+  return !isTerminal(node) && node.op === '*' &&
+    !isTerminal(node.right) && node.right.op === '/' &&
+    constValue(node.right.left) === 1;
+}
+
 function precedenceOf(node) {
   if (isTerminal(node)) {
     return isConstant(node) && Number(node) < 0 ? 0 : 9;
@@ -583,6 +608,10 @@ function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
     return `${fn('pow')}(${toInfix(node.left, format, digits)}, ${toInfix(node.right, format, digits)})`;
   }
 
+  if (isReciprocalProduct(node)) {
+    return toInfix({ op: '/', left: node.left, right: node.right.right }, format, digits);
+  }
+
   const p = PRECEDENCE[node.op];
   const lp = precedenceOf(node.left);
   const rp = precedenceOf(node.right);
@@ -603,6 +632,10 @@ const LATEX_FUNCTIONS = {
 };
 
 function toLatex(node, digits = DISPLAY_DIGITS) {
+
+  if (isReciprocalProduct(node)) {
+    return toLatex({ op: '/', left: node.left, right: node.right.right }, digits);
+  }
 
   const paren = (s) => `\\left(${s}\\right)`;
 
