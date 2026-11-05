@@ -1,10 +1,11 @@
 {
   "name": "browser-genetic-programming",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Zero-install, in-browser symbolic regression playground built on Genetic Programming.",
   "license": "MIT",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "bench": "node bench/benchmark.js"
   }
 }
