@@ -29,17 +29,55 @@ const OP_ARITY = {
 };
 
 const DEFAULT_SAMPLE_COUNT = 101;
+const MAX_TREE_DEPTH_LIMIT = 17;
+
+// =========================================================
+// TARGET FORMULAS
+// =========================================================
+
+// Names allowed in a target formula besides `x`: everything on Math
+// (sin, pow, PI, E, abs, ...). Nothing else is reachable, so a formula,
+// including one arriving in a shared link, cannot run arbitrary code.
+const MATH_NAMES = new Set(Object.getOwnPropertyNames(Math));
+
+const FORMULA_TOKEN =
+  /\s+|\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|Math\.[A-Za-z_$][\w$]*|[A-Za-z_$][\w$]*|\*\*|[-+*/%(),]/y;
+
+function checkFormulaSyntax(source) {
+  FORMULA_TOKEN.lastIndex = 0;
+
+  while (FORMULA_TOKEN.lastIndex < source.length) {
+    const start = FORMULA_TOKEN.lastIndex;
+    const match = FORMULA_TOKEN.exec(source);
+
+    if (!match) {
+      throw new Error(`unexpected character "${source[start]}"`);
+    }
+
+    const token = match[0];
+
+    if (/^[A-Za-z_$]/.test(token)) {
+      const name = token.startsWith('Math.') ? token.slice(5) : token;
+
+      if (token !== 'x' && !MATH_NAMES.has(name)) {
+        throw new Error(`unknown name "${token}"`);
+      }
+    }
+  }
+}
 
 // Compile a target formula once. Math functions are in scope, so both
 // `Math.sin(x)` and `sin(x)` / `pow(x, 2)` work - which also means an
 // evolved expression can be pasted straight back in as a target.
-// Throws on syntax errors.
+// Throws on anything that is not a plain arithmetic expression in x.
 function compileFormula(formula) {
   const source = String(formula == null ? '' : formula).trim();
 
   if (!source) {
     throw new Error('Formula is empty.');
   }
+
+  checkFormulaSyntax(source);
 
   // eslint-disable-next-line no-new-func
   const fn = new Function('x', `with (Math) { return (${source}); }`);
@@ -73,13 +111,27 @@ function generateFormulaSamples(formula, minX, maxX, count = DEFAULT_SAMPLE_COUN
   return samples;
 }
 
+// =========================================================
+// TREES
+// =========================================================
+// A tree is a terminal string ('x' or a numeric constant such as
+// '3.141') or {op, child} (unary) or {op, left, right} (binary).
+
+function isTerminal(node) {
+  return typeof node === 'string' || typeof node === 'number';
+}
+
+function isConstant(node) {
+  return isTerminal(node) && node !== 'x';
+}
+
 function evaluateTree(node, x) {
 
   if (node == null) {
     return NaN;
   }
 
-  if (typeof node === 'string' || typeof node === 'number') {
+  if (isTerminal(node)) {
     return node === 'x' ? x : Number(node);
   }
 
@@ -127,13 +179,33 @@ function evaluateTree(node, x) {
   return NaN;
 }
 
+function treeSize(node) {
+  if (isTerminal(node)) return 1;
+  if (node.child) return 1 + treeSize(node.child);
+  return 1 + treeSize(node.left) + treeSize(node.right);
+}
+
+// A terminal has depth 0.
+function treeDepth(node) {
+  if (isTerminal(node)) return 0;
+  if (node.child) return 1 + treeDepth(node.child);
+  return 1 + Math.max(treeDepth(node.left), treeDepth(node.right));
+}
+
+function containsX(node) {
+  if (isTerminal(node)) return node === 'x';
+  if (node.child) return containsX(node.child);
+  return containsX(node.left) || containsX(node.right);
+}
+
+// Fully parenthesised form; also used as a structural key.
 function treeToString(node) {
 
   if (node == null) {
     return '';
   }
 
-  if (typeof node === 'string' || typeof node === 'number') {
+  if (isTerminal(node)) {
     return String(node);
   }
 
@@ -147,6 +219,467 @@ function treeToString(node) {
 
   return `(${treeToString(node.left)} ${node.op} ${treeToString(node.right)})`;
 }
+
+// Compact nested-array form used for storage and share links:
+// 'x' | '1.5' | [op, child] | [op, left, right]
+function compressTree(node) {
+  if (node == null) return null;
+  if (isTerminal(node)) return node;
+  if (node.child) return [node.op, compressTree(node.child)];
+  return [node.op, compressTree(node.left), compressTree(node.right)];
+}
+
+function decompressTree(node) {
+  if (isTerminal(node)) return node;
+  if (!Array.isArray(node)) return null;
+  if (node.length === 2) {
+    return { op: node[0], child: decompressTree(node[1]) };
+  }
+  return {
+    op: node[0],
+    left: decompressTree(node[1]),
+    right: decompressTree(node[2])
+  };
+}
+
+// Strictly check an untrusted tree (e.g. from a share link).
+function isValidTree(node, depth = 0) {
+  if (depth > 64) return false;
+  if (typeof node === 'string') {
+    return node === 'x' || Number.isFinite(Number(node));
+  }
+  if (!node || typeof node !== 'object' || !OP_ARITY[node.op]) return false;
+  if (OP_ARITY[node.op] === 1) return isValidTree(node.child, depth + 1);
+  return isValidTree(node.left, depth + 1) && isValidTree(node.right, depth + 1);
+}
+
+// =========================================================
+// LINEAR SCALING
+// =========================================================
+// Keijzer (2003): evolve the *shape* f(x) and fit the best a + b*f(x)
+// by least squares, so the search never has to discover the right
+// offset and scale through random constants.
+
+function scaledTree(tree, a, b) {
+  return {
+    op: '+',
+    left: String(a),
+    right: { op: '*', left: String(b), right: tree }
+  };
+}
+
+// =========================================================
+// SIMPLIFICATION
+// =========================================================
+
+function num(v) {
+  // -0 prints as "0"
+  return String(v === 0 ? 0 : v);
+}
+
+function constValue(node) {
+  return isConstant(node) ? Number(node) : null;
+}
+
+// Split a term into coefficient * rest (rest is null for a constant).
+function splitCoefficient(node) {
+  const c = constValue(node);
+
+  if (c !== null) {
+    return { coef: c, rest: null };
+  }
+
+  if (node.op === '*' && constValue(node.left) !== null) {
+    return { coef: Number(node.left), rest: node.right };
+  }
+
+  return { coef: 1, rest: node };
+}
+
+function collectSum(node, sign, terms) {
+  if (!isTerminal(node) && (node.op === '+' || node.op === '-')) {
+    collectSum(node.left, sign, terms);
+    collectSum(node.right, node.op === '+' ? sign : -sign, terms);
+    return;
+  }
+
+  terms.push({ sign, node });
+}
+
+function buildSum(node) {
+  const raw = [];
+  collectSum(node, 1, raw);
+
+  let constant = 0;
+  const groups = new Map();
+
+  for (const { sign, node: term } of raw) {
+    const { coef, rest } = splitCoefficient(term);
+
+    if (rest === null) {
+      constant += sign * coef;
+      continue;
+    }
+
+    const key = treeToString(rest);
+    const g = groups.get(key);
+
+    if (g) {
+      g.coef += sign * coef;
+    } else {
+      groups.set(key, { coef: sign * coef, rest });
+    }
+  }
+
+  const termNode = (coef, rest) =>
+    coef === 1 ? rest : { op: '*', left: num(coef), right: rest };
+
+  let out = null;
+
+  for (const { coef, rest } of groups.values()) {
+    if (coef === 0) continue;
+
+    if (out === null) {
+      out = termNode(coef, rest);
+    } else if (coef < 0) {
+      out = { op: '-', left: out, right: termNode(-coef, rest) };
+    } else {
+      out = { op: '+', left: out, right: termNode(coef, rest) };
+    }
+  }
+
+  if (out === null) {
+    return num(constant);
+  }
+
+  if (constant > 0) {
+    out = { op: '+', left: out, right: num(constant) };
+  } else if (constant < 0) {
+    out = { op: '-', left: out, right: num(-constant) };
+  }
+
+  return out;
+}
+
+function collectProduct(node, factors) {
+  if (!isTerminal(node) && node.op === '*') {
+    collectProduct(node.left, factors);
+    collectProduct(node.right, factors);
+    return;
+  }
+
+  factors.push(node);
+}
+
+function buildProduct(node) {
+  const raw = [];
+  collectProduct(node, raw);
+
+  let constant = 1;
+  const groups = new Map();
+
+  for (const f of raw) {
+    const c = constValue(f);
+
+    if (c !== null) {
+      constant *= c;
+      continue;
+    }
+
+    const key = treeToString(f);
+    const g = groups.get(key);
+
+    if (g) {
+      g.power += 1;
+    } else {
+      groups.set(key, { power: 1, node: f });
+    }
+  }
+
+  if (constant === 0) {
+    return '0';
+  }
+
+  let out = null;
+
+  for (const { power, node: f } of groups.values()) {
+    const factor = power === 1 ? f : { op: 'pow', left: f, right: num(power) };
+    out = out === null ? factor : { op: '*', left: out, right: factor };
+  }
+
+  if (out === null) {
+    return num(constant);
+  }
+
+  if (constant === 1) {
+    return out;
+  }
+
+  // c * (u + v - w)  ->  c*u + c*v - c*w, so the a + b*(...) wrapper
+  // from linear scaling folds into the program's own coefficients
+  if (groups.size === 1 && !isTerminal(out) && (out.op === '+' || out.op === '-')) {
+    const terms = [];
+    collectSum(out, 1, terms);
+
+    let sum = null;
+
+    for (const { sign, node: term } of terms) {
+      const scaled = buildProduct({ op: '*', left: num(sign * constant), right: term });
+      sum = sum === null ? scaled : { op: '+', left: sum, right: scaled };
+    }
+
+    return buildSum(sum);
+  }
+
+  return { op: '*', left: num(constant), right: out };
+}
+
+function simplifyOnce(node) {
+
+  if (isTerminal(node)) {
+    return node === 'x' ? 'x' : num(Number(node));
+  }
+
+  const n = node.child ?
+    { op: node.op, child: simplifyOnce(node.child) } :
+    { op: node.op, left: simplifyOnce(node.left), right: simplifyOnce(node.right) };
+
+  // constant folding
+  if (!containsX(n)) {
+    const v = evaluateTree(n, 0);
+
+    if (Number.isFinite(v)) {
+      return num(v);
+    }
+
+    return n;
+  }
+
+  switch (n.op) {
+    case '+':
+    case '-':
+      return buildSum(n);
+
+    case '*':
+      return buildProduct(n);
+
+    case '/': {
+      const r = constValue(n.right);
+
+      if (r !== null && r !== 0) {
+        // u / c  ->  (1/c) * u
+        return buildProduct({ op: '*', left: num(1 / r), right: n.left });
+      }
+
+      if (constValue(n.left) === 0) {
+        return '0';
+      }
+
+      if (treeToString(n.left) === treeToString(n.right)) {
+        return '1';
+      }
+
+      return n;
+    }
+
+    case 'pow': {
+      const e = constValue(n.right);
+
+      if (e === 1) return n.left;
+      if (e === 0) return '1';
+      if (constValue(n.left) === 1) return '1';
+
+      return n;
+    }
+  }
+
+  return n;
+}
+
+// Algebraic simplification for display and export. If `points` are
+// given, the result is only accepted when it computes the same values
+// as the original on every point; otherwise the original is returned.
+function simplifyTree(tree, points = null) {
+  let current = tree;
+
+  for (let i = 0; i < 8; i++) {
+    const next = simplifyOnce(current);
+
+    if (treeToString(next) === treeToString(current)) {
+      break;
+    }
+
+    current = next;
+  }
+
+  if (points && points.length) {
+    for (const p of points) {
+      const a = evaluateTree(tree, p.x);
+      const b = evaluateTree(current, p.x);
+
+      if (!Number.isFinite(a)) continue;
+
+      if (!Number.isFinite(b) || Math.abs(a - b) > 1e-7 * Math.max(1, Math.abs(a))) {
+        return tree;
+      }
+    }
+  }
+
+  return current;
+}
+
+// =========================================================
+// PRINTING & EXPORT
+// =========================================================
+
+// Significant digits for constants: short for reading, full for export.
+const DISPLAY_DIGITS = 5;
+const EXPORT_DIGITS = 12;
+
+function formatNumber(value, digits) {
+  const v = Number(Number(value).toPrecision(digits));
+  return num(v);
+}
+
+const PRECEDENCE = { '+': 1, '-': 1, '*': 2, '/': 2 };
+
+function precedenceOf(node) {
+  if (isTerminal(node)) {
+    return isConstant(node) && Number(node) < 0 ? 0 : 9;
+  }
+  if (node.op === 'pow') return 3;
+  return PRECEDENCE[node.op] || 9; // unary function calls are atomic
+}
+
+const FUNCTION_NAMES = {
+  plain: (op) => op,
+  js: (op) => `Math.${op}`,
+  python: (op) => `math.${op}`
+};
+
+// Infix with only the parentheses that are needed.
+// format: 'plain' (default; also valid as a target formula), 'js', 'python'
+function toInfix(node, format = 'plain', digits = DISPLAY_DIGITS) {
+  const fn = FUNCTION_NAMES[format];
+
+  const wrap = (child, needParens) => {
+    const s = toInfix(child, format, digits);
+    return needParens ? `(${s})` : s;
+  };
+
+  if (isTerminal(node)) {
+    return node === 'x' ? 'x' : formatNumber(node, digits);
+  }
+
+  if (node.child) {
+    return `${fn(node.op)}(${toInfix(node.child, format, digits)})`;
+  }
+
+  if (node.op === 'pow') {
+    if (format === 'python') {
+      return `${wrap(node.left, precedenceOf(node.left) <= 3)} ** ${wrap(node.right, precedenceOf(node.right) <= 3)}`;
+    }
+
+    return `${fn('pow')}(${toInfix(node.left, format, digits)}, ${toInfix(node.right, format, digits)})`;
+  }
+
+  const p = PRECEDENCE[node.op];
+  const lp = precedenceOf(node.left);
+  const rp = precedenceOf(node.right);
+
+  // a negative constant may stay bare only as the leftmost operand
+  const left = wrap(node.left, lp < p && !(lp === 0 && p <= 2));
+  const right = wrap(node.right, node.op === '-' || node.op === '/' ? rp <= p : rp < p);
+
+  return `${left} ${node.op} ${right}`;
+}
+
+const LATEX_FUNCTIONS = {
+  sin: '\\sin', cos: '\\cos', tan: '\\tan',
+  sinh: '\\sinh', cosh: '\\cosh', tanh: '\\tanh',
+  asin: '\\arcsin', acos: '\\arccos', atan: '\\arctan',
+  asinh: '\\operatorname{arsinh}', acosh: '\\operatorname{arcosh}', atanh: '\\operatorname{artanh}',
+  log: '\\ln', log2: '\\log_{2}', log10: '\\log_{10}'
+};
+
+function toLatex(node, digits = DISPLAY_DIGITS) {
+
+  const paren = (s) => `\\left(${s}\\right)`;
+
+  if (isTerminal(node)) {
+    if (node === 'x') return 'x';
+
+    const s = formatNumber(node, digits);
+    const m = s.match(/^(-?[\d.]+)e([+-]?\d+)$/);
+
+    return m ? `${m[1]} \\times 10^{${Number(m[2])}}` : s;
+  }
+
+  if (node.child) {
+    const inner = toLatex(node.child, digits);
+
+    switch (node.op) {
+      case 'exp': return `e^{${inner}}`;
+      case 'sqrt': return `\\sqrt{${inner}}`;
+      case 'cbrt': return `\\sqrt[3]{${inner}}`;
+    }
+
+    return `${LATEX_FUNCTIONS[node.op]}${paren(inner)}`;
+  }
+
+  const left = toLatex(node.left, digits);
+  const right = toLatex(node.right, digits);
+  const lp = precedenceOf(node.left);
+  const rp = precedenceOf(node.right);
+
+  switch (node.op) {
+    case '/':
+      return `\\frac{${left}}{${right}}`;
+
+    case 'pow':
+      return `{${isTerminal(node.left) && lp !== 0 ? left : paren(left)}}^{${right}}`;
+
+    case '*':
+      return `${lp < 2 && !(lp === 0) ? paren(left) : left} \\cdot ${rp < 2 ? paren(right) : right}`;
+
+    case '+':
+      return `${left} + ${rp === 0 ? paren(right) : right}`;
+
+    case '-':
+      return `${left} - ${rp <= 1 ? paren(right) : right}`;
+  }
+
+  return '';
+}
+
+function usesOp(node, op) {
+  if (isTerminal(node)) return false;
+  if (node.op === op) return true;
+  if (node.child) return usesOp(node.child, op);
+  return usesOp(node.left, op) || usesOp(node.right, op);
+}
+
+function exportProgram(tree, format) {
+  switch (format) {
+    case 'js':
+      return `const f = (x) => ${toInfix(tree, 'js', EXPORT_DIGITS)};`;
+
+    case 'python': {
+      const note = usesOp(tree, 'cbrt') ? '  # math.cbrt needs Python 3.11+' : '';
+      return `import math\n\n\ndef f(x):\n    return ${toInfix(tree, 'python', EXPORT_DIGITS)}${note}\n`;
+    }
+
+    case 'latex':
+      return `y = ${toLatex(tree, DISPLAY_DIGITS)}`;
+
+    default:
+      return toInfix(tree, 'plain', DISPLAY_DIGITS);
+  }
+}
+
+// =========================================================
+// CONFIG
+// =========================================================
 
 // Validate a run configuration. Returns a list of human-readable
 // problems; an empty list means the config is usable.
@@ -185,7 +718,16 @@ function validateConfig(config) {
   }
 
   if (!isInt(config.treeDepth) || config.treeDepth < 1 || config.treeDepth > 12) {
-    errors.push('Tree Depth must be a whole number between 1 and 12.');
+    errors.push('Initial Tree Depth must be a whole number between 1 and 12.');
+  }
+
+  if (
+    config.maxTreeDepth !== undefined &&
+    (!isInt(config.maxTreeDepth) ||
+      config.maxTreeDepth < config.treeDepth ||
+      config.maxTreeDepth > MAX_TREE_DEPTH_LIMIT)
+  ) {
+    errors.push(`Max Tree Depth must be a whole number between Initial Tree Depth and ${MAX_TREE_DEPTH_LIMIT}.`);
   }
 
   if (!Array.isArray(config.operators) || config.operators.length === 0) {
@@ -236,8 +778,8 @@ function validateConfig(config) {
   return errors;
 }
 
-// Older saved sessions stored a "minError" threshold on (1 - R²).
-// Convert it so restored runs keep the same stopping behaviour.
+// Fill in settings added after a session was saved, and convert the
+// old "minError" threshold on (1 - R²), so restored runs keep working.
 function normalizeConfig(config) {
   const c = Object.assign({}, config || {});
 
@@ -251,18 +793,176 @@ function normalizeConfig(config) {
     c.sampleCount = DEFAULT_SAMPLE_COUNT;
   }
 
+  if (typeof c.maxTreeDepth !== 'number') {
+    const d = typeof c.treeDepth === 'number' ? c.treeDepth : 4;
+    c.maxTreeDepth = Math.min(MAX_TREE_DEPTH_LIMIT, Math.max(8, 2 * d));
+  }
+
+  if (typeof c.linearScaling !== 'boolean') {
+    c.linearScaling = true;
+  }
+
   return c;
+}
+
+// =========================================================
+// SHARE LINKS
+// =========================================================
+// Payload JSON -> deflate (when available) -> base64url.
+// 'z' prefix = compressed, 'j' = plain JSON.
+
+const SHARE_VERSION = 1;
+const MAX_SHARED_POINTS = 2000;
+
+function bytesToBase64Url(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlToBytes(text) {
+  const b64 = text.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function pipeThrough(bytes, stream) {
+  const out = new Response(new Blob([bytes]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
+}
+
+async function encodeShare(payload) {
+  const json = new TextEncoder().encode(JSON.stringify({ v: SHARE_VERSION, ...payload }));
+
+  if (typeof CompressionStream !== 'undefined') {
+    const packed = await pipeThrough(json, new CompressionStream('deflate-raw'));
+    return 'z' + bytesToBase64Url(packed);
+  }
+
+  return 'j' + bytesToBase64Url(json);
+}
+
+async function decodeShare(code) {
+  const kind = code[0];
+  let bytes = base64UrlToBytes(code.slice(1));
+
+  if (kind === 'z') {
+    bytes = await pipeThrough(bytes, new DecompressionStream('deflate-raw'));
+  } else if (kind !== 'j') {
+    throw new Error('unknown link format');
+  }
+
+  const payload = JSON.parse(new TextDecoder().decode(bytes));
+
+  if (!payload || payload.v !== SHARE_VERSION) {
+    throw new Error('unsupported link version');
+  }
+
+  return sanitizeShare(payload);
+}
+
+// Share links are untrusted input: keep only known, well-typed fields.
+function sanitizeShare(payload) {
+  const c = payload.config || {};
+  const config = {};
+  const numbers = [
+    'minX', 'maxX', 'sampleCount', 'populationSize', 'targetR2',
+    'maxGenerations', 'mutationRate', 'crossoverRate', 'elitismRate',
+    'tournamentSize', 'treeDepth', 'maxTreeDepth'
+  ];
+
+  for (const k of numbers) {
+    if (typeof c[k] === 'number' && Number.isFinite(c[k])) config[k] = c[k];
+  }
+
+  if (typeof c.targetFormula === 'string' && c.targetFormula.length <= 500) {
+    config.targetFormula = c.targetFormula;
+  }
+
+  if (c.dataMode === 'formula' || c.dataMode === 'dataset') {
+    config.dataMode = c.dataMode;
+  }
+
+  if (typeof c.linearScaling === 'boolean') {
+    config.linearScaling = c.linearScaling;
+  }
+
+  if (Array.isArray(c.operators)) {
+    config.operators = c.operators.filter(op => OP_ARITY[op]);
+  }
+
+  if (Array.isArray(c.dataset)) {
+    config.dataset = c.dataset
+      .slice(0, MAX_SHARED_POINTS)
+      .filter(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite))
+      .map(([x, y]) => ({ x, y }));
+  }
+
+  const result = { config };
+
+  const model = decompressTree(payload.model);
+
+  if (model && isValidTree(model)) {
+    result.model = model;
+  }
+
+  if (typeof payload.r2 === 'number') result.r2 = payload.r2;
+  if (Number.isInteger(payload.generation)) result.generation = payload.generation;
+  if (typeof payload.datasetOmitted === 'boolean') result.datasetOmitted = payload.datasetOmitted;
+  if (typeof payload.fileName === 'string') result.fileName = payload.fileName.slice(0, 200);
+
+  return result;
+}
+
+// Build a share payload from a run. Datasets are packed as [x, y]
+// pairs and left out when too large for a link.
+function buildSharePayload({ config, model, r2, generation, fileName }) {
+  const { dataset, ...rest } = config;
+  const payload = { config: rest, r2, generation };
+
+  if (model) {
+    payload.model = compressTree(model);
+  }
+
+  if (config.dataMode === 'dataset') {
+    if ((dataset || []).length <= MAX_SHARED_POINTS) {
+      payload.config.dataset = dataset.map(p => [p.x, p.y]);
+    } else {
+      payload.datasetOmitted = true;
+    }
+
+    payload.fileName = fileName;
+  }
+
+  return payload;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     OP_ARITY,
     DEFAULT_SAMPLE_COUNT,
+    MAX_TREE_DEPTH_LIMIT,
+    MAX_SHARED_POINTS,
     compileFormula,
     generateFormulaSamples,
     evaluateTree,
+    treeSize,
+    treeDepth,
     treeToString,
+    compressTree,
+    decompressTree,
+    isValidTree,
+    scaledTree,
+    simplifyTree,
+    toInfix,
+    toLatex,
+    exportProgram,
     validateConfig,
-    normalizeConfig
+    normalizeConfig,
+    encodeShare,
+    decodeShare,
+    buildSharePayload
   };
 }
