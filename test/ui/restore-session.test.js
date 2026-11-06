@@ -5,12 +5,17 @@ const assert = require('node:assert/strict');
 const {
   useBrowser, openApp, openTab, reload, storedSession, waitForStoredSession,
   uploadCsv, setSettings, loadedSummary, button, startButton, status,
-  generation, recordGenerations, waitForStatus
+  generation, recordGenerations, waitForStatus, restoreBanner
 } = require('./helpers');
 
 useBrowser();
 
-const RESTORE_PROMPT = 'Restore your previous run? It comes back paused, where you left it.';
+// Reload, as when coming back later, and restore the saved run from
+// the banner.
+async function reloadAndRestore(page) {
+  await reload(page);
+  await restoreBanner(page).getByRole('button', { name: 'Restore run' }).click();
+}
 
 // Run sin(x) (never solved exactly by + - *) to `generations`, and wait
 // until the finished run's checkpoint is in IndexedDB.
@@ -27,11 +32,12 @@ test('a fresh visit has nothing to restore', async (t) => {
 
   assert.equal(await storedSession(page), null);
   await reload(page);
-  assert.deepEqual(page.dialogs, []);
+  await page.waitForTimeout(300);
+  assert.equal(await restoreBanner(page).count(), 0);
 });
 
 test('a finished run is restored, paused, with its settings and results', async (t) => {
-  const page = await openApp(t, { dialogs: 'accept' });
+  const page = await openApp(t);
 
   // Slow mode reports every generation, so the resumed run below shows
   // whether it continues from 5 or starts again from 1
@@ -41,8 +47,15 @@ test('a finished run is restored, paused, with its settings and results', async 
 
   await reload(page);
 
-  assert.deepEqual(page.dialogs, [RESTORE_PROMPT]);
+  // offered in the page, not in a dialog, saying what the run is
+  const banner = restoreBanner(page);
+  await banner.waitFor();
+  assert.match(await banner.innerText(), /y = sin\(x\) · generation 5 · R² [\d.]+ \([a-z ]+fit\) · saved (just now|\d+ seconds? ago|now)/);
+  assert.deepEqual(page.dialogs, []);
+
+  await banner.getByRole('button', { name: 'Restore run' }).click();
   await waitForStatus(page, 'Restored session at generation 5. Press Resume to continue.');
+  assert.equal(await banner.count(), 0);
 
   assert.equal(await generation(page), 5);
   assert.equal(await page.locator('#formula').inputValue(), 'sin(x)');
@@ -60,7 +73,7 @@ test('a finished run is restored, paused, with its settings and results', async 
 });
 
 test('a stopped run is restored at the generation where it stopped', async (t) => {
-  const page = await openApp(t, { dialogs: 'accept' });
+  const page = await openApp(t);
 
   await page.locator('#formula').fill('sin(x)');
   await setSettings(page, { 'Target R²': 1, 'Max Generations': 1000000 });
@@ -74,12 +87,12 @@ test('a stopped run is restored at the generation where it stopped', async (t) =
   const stopped = await generation(page);
   await waitForStoredSession(page, (s) => s && s.generation === stopped);
 
-  await reload(page);
+  await reloadAndRestore(page);
   await waitForStatus(page, `Restored session at generation ${stopped}.`);
 });
 
 test('an uploaded dataset is restored with its file name', async (t) => {
-  const page = await openApp(t, { dialogs: 'accept' });
+  const page = await openApp(t);
 
   await uploadCsv(page, 'a,b,y\n1,2,9\n2,1,4\n3,5,1\n4,4,8\n5,0,2\n', 'mixed.csv');
   await setSettings(page, { 'Target R²': 1, 'Max Generations': 3 });
@@ -88,6 +101,8 @@ test('an uploaded dataset is restored with its file name', async (t) => {
   await waitForStoredSession(page, (s) => s && s.generation === 3);
 
   await reload(page);
+  assert.match(await restoreBanner(page).innerText(), /mixed\.csv · generation 3/);
+  await restoreBanner(page).getByRole('button', { name: 'Restore run' }).click();
   await waitForStatus(page, 'Restored session at generation 3.');
 
   assert.ok(await page.getByLabel('Upload dataset').isChecked());
@@ -102,34 +117,52 @@ test('declining the restore keeps the stored session for next time', async (t) =
 
   await runToMaxGenerations(page, 3);
 
-  page.answerDialogs = 'dismiss';
   await reload(page);
+  await restoreBanner(page).getByRole('button', { name: 'Not now' }).click();
 
-  assert.deepEqual(page.dialogs, [RESTORE_PROMPT]);
+  assert.equal(await restoreBanner(page).count(), 0);
   assert.ok(await startButton(page).isEnabled());
   assert.equal(await generation(page), 0);
   assert.equal(await status(page).count(), 0);
   assert.equal((await storedSession(page)).generation, 3);
 
+  // offered again next time
   await reload(page);
-  assert.deepEqual(page.dialogs, [RESTORE_PROMPT, RESTORE_PROMPT]);
+  await restoreBanner(page).waitFor();
+});
+
+test('the page can be used while the restore is offered, and a new run replaces it', async (t) => {
+  const page = await openApp(t);
+
+  await runToMaxGenerations(page, 3);
+  await reload(page);
+  await restoreBanner(page).waitFor();
+
+  // nothing blocks the page: edit and start a different run
+  await page.locator('#formula').fill('x*x + 2');
+  await setSettings(page, { 'Target R²': 0.999 });
+  await startButton(page).click();
+
+  await waitForStatus(page, 'Target R² reached');
+  assert.equal(await restoreBanner(page).count(), 0);
+  await waitForStoredSession(page, (s) => s && s.generation === 1);
 });
 
 test('Clear Results deletes the stored session', async (t) => {
-  const page = await openApp(t, { dialogs: 'accept' });
+  const page = await openApp(t);
 
   await runToMaxGenerations(page, 3);
   await button(page, 'Clear Results').click();
   await startButton(page).waitFor();
   await waitForStoredSession(page, (s) => s === null);
 
-  page.dialogs.length = 0;
   await reload(page);
-  assert.deepEqual(page.dialogs, []);
+  await page.waitForTimeout(300);
+  assert.equal(await restoreBanner(page).count(), 0);
 });
 
 test('Undo after Clear Results saves the run again', async (t) => {
-  const page = await openApp(t, { dialogs: 'accept' });
+  const page = await openApp(t);
 
   await runToMaxGenerations(page, 3);
   await button(page, 'Clear Results').click();
@@ -138,12 +171,12 @@ test('Undo after Clear Results saves the run again', async (t) => {
   await button(page, 'Undo').click();
   await waitForStoredSession(page, (s) => s && s.generation === 3);
 
-  await reload(page);
+  await reloadAndRestore(page);
   await waitForStatus(page, 'Restored session at generation 3.');
 });
 
 test('opening a share link does not offer to restore the saved session', async (t) => {
-  const page = await openApp(t, { dialogs: 'accept' });
+  const page = await openApp(t);
 
   await runToMaxGenerations(page, 3);
   await button(page, 'Copy share link').click();
@@ -152,7 +185,8 @@ test('opening a share link does not offer to restore the saved session', async (
   const tab = await openTab(page, url);
 
   await waitForStatus(tab, 'Loaded a shared run');
-  assert.deepEqual(tab.dialogs, []);
+  await tab.waitForTimeout(300);
+  assert.equal(await restoreBanner(tab).count(), 0);
 
   // and the saved session is still there
   assert.equal((await storedSession(tab)).generation, 3);

@@ -118,3 +118,55 @@ test('factors cancel across divisions', () => {
   assert.equal(s.toInfix(s.simplifyTree(T('/', '3', T('*', '2', 'x')))), '1.5 / x');
   assert.equal(s.toInfix(s.simplifyTree(T('/', 'x', '0'))), 'x / 0');
 });
+
+test('parseCsv lists the rows it skips, with their line numbers and why', () => {
+  const t = s.parseCsv('a,b,y\n1.5,,3\n1,2,3\n\n7,x,8\n9\n4,5,6\n');
+
+  assert.deepEqual(t.rows, [[1, 2, 3], [4, 5, 6]]);
+  // line numbers count every line of the file, blank ones included
+  assert.deepEqual(t.skipped, [
+    { line: 2, reason: 'an empty cell' },
+    { line: 5, reason: 'text instead of a number' },
+    { line: 6, reason: 'missing cells' }
+  ]);
+
+  assert.deepEqual(s.parseCsv('a,y\n1,2\n').skipped, []);
+  assert.deepEqual(s.parseCsv('').skipped, []);
+});
+
+test('describeSkippedRows sums up skipped rows by reason', () => {
+  assert.equal(s.describeSkippedRows([]), '');
+  assert.equal(
+    s.describeSkippedRows([{ line: 4, reason: 'an empty cell' }]),
+    'Skipped 1 row: line 4 (an empty cell).'
+  );
+  assert.equal(
+    s.describeSkippedRows([
+      { line: 2, reason: 'an empty cell' },
+      { line: 5, reason: 'text instead of a number' },
+      { line: 9, reason: 'an empty cell' }
+    ]),
+    'Skipped 3 rows: lines 2 and 9 (an empty cell); line 5 (text instead of a number).'
+  );
+
+  // long lists are shortened
+  const many = [3, 4, 5, 6, 7, 8, 9].map(line => ({ line, reason: 'missing cells' }));
+  assert.equal(s.describeSkippedRows(many), 'Skipped 7 rows: lines 3, 4, 5, 6, 7 and 2 more (missing cells).');
+});
+
+test('the sample CSV parses cleanly and follows its formula', () => {
+  const t = s.parseCsv(s.sampleCsv());
+
+  assert.deepEqual(t.headers, ['height', 'width', 'depth', 'price']);
+  assert.equal(t.rows.length, 24);
+  assert.deepEqual(t.skipped, []);
+
+  for (const [h, w, d, price] of t.rows) {
+    assert.ok(Math.abs(price - (2 * h * w + 1.5 * d + 3)) <= 0.01, `${h}, ${w}, ${d} -> ${price}`);
+  }
+
+  // the inputs vary, so there is something to fit
+  for (let c = 0; c < 4; c++) {
+    assert.ok(new Set(t.rows.map(r => r[c])).size > 3, `column ${c} varies`);
+  }
+});

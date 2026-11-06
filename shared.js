@@ -585,6 +585,19 @@ function formatNumber(value, digits) {
   return num(v);
 }
 
+// A constant as shown in a tree node: at most about 7 characters, so it
+// fits its node (very small or large values use exponent notation).
+function formatShortNumber(value) {
+  const v = Number(value);
+  const a = Math.abs(v);
+
+  if (a !== 0 && (a < 1e-3 || a >= 1e5)) {
+    return v.toExponential(2).replace(/\.?0+e/, 'e').replace('e+', 'e');
+  }
+
+  return String(Number(v.toPrecision(4)));
+}
+
 const PRECEDENCE = { '+': 1, '-': 1, '*': 2, '/': 2 };
 
 // u * (1 / v): printed as u / v
@@ -860,15 +873,20 @@ function splitCsvLine(line) {
 }
 
 // Parse CSV text into a header row and numeric rows. A first row that
-// is not all numbers is treated as the header.
+// is not all numbers is treated as the header. Rows that cannot be used
+// are listed in `skipped` as { line, reason }, with `line` the row's
+// line number in the file (1 = the first line), so the page can say
+// which rows it left out and why.
 function parseCsv(text) {
-  const lines = String(text).split(/\r?\n/).filter(l => l.trim());
+  const lines = String(text).split(/\r?\n/)
+    .map((l, i) => ({ text: l, line: i + 1 }))
+    .filter(l => l.text.trim());
 
   if (!lines.length) {
-    return { headers: [], rows: [] };
+    return { headers: [], rows: [], skipped: [] };
   }
 
-  const first = splitCsvLine(lines[0]);
+  const first = splitCsvLine(lines[0].text);
   const hasHeader = first.some(cell => cell === '' || !Number.isFinite(Number(cell)));
   const width = first.length;
 
@@ -877,25 +895,87 @@ function parseCsv(text) {
     first.map((_, i) => (i === width - 1 ? 'y' : `x${i + 1}`));
 
   const rows = [];
+  const skipped = [];
 
-  for (const line of hasHeader ? lines.slice(1) : lines) {
+  for (const { text: line, line: number } of hasHeader ? lines.slice(1) : lines) {
     const cells = splitCsvLine(line);
 
-    if (cells.length < width) continue;
+    if (cells.length < width) {
+      skipped.push({ line: number, reason: 'missing cells' });
+      continue;
+    }
 
     const kept = cells.slice(0, width);
 
     // Number('') is 0, so an empty cell would otherwise count as a 0
-    if (kept.some(cell => cell === '')) continue;
+    if (kept.some(cell => cell === '')) {
+      skipped.push({ line: number, reason: 'an empty cell' });
+      continue;
+    }
 
     const values = kept.map(Number);
 
     if (values.every(Number.isFinite)) {
       rows.push(values);
+    } else {
+      skipped.push({ line: number, reason: 'text instead of a number' });
     }
   }
 
-  return { headers, rows };
+  return { headers, rows, skipped };
+}
+
+// A short summary of parseCsv's skipped rows, such as
+// "Skipped 3 rows: lines 4 and 9 (an empty cell), line 7 (text instead
+// of a number)." Lists at most `maxLines` line numbers per reason.
+function describeSkippedRows(skipped, maxLines = 5) {
+  if (!skipped || !skipped.length) return '';
+
+  const byReason = new Map();
+  for (const { line, reason } of skipped) {
+    if (!byReason.has(reason)) byReason.set(reason, []);
+    byReason.get(reason).push(line);
+  }
+
+  const parts = [...byReason].map(([reason, lines]) => {
+    const shown = lines.slice(0, maxLines);
+    const more = lines.length - shown.length;
+    const list = shown.length === 1 ? String(shown[0]) :
+      more ? `${shown.join(', ')} and ${more} more` :
+        `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
+    return `${lines.length === 1 ? 'line' : 'lines'} ${list} (${reason})`;
+  });
+
+  const n = skipped.length;
+  return `Skipped ${n} row${n === 1 ? '' : 's'}: ${parts.join('; ')}.`;
+}
+
+// A small dataset to try the CSV upload with, or to download as a
+// template: the price of boxes from their height, width and depth,
+// price = 2·height·width + 1.5·depth + 3, rounded to two decimals.
+function sampleCsv() {
+  const lines = ['height,width,depth,price'];
+
+  for (let i = 0; i < 24; i++) {
+    const height = 1 + ((i * 7) % 10) * 0.5;
+    const width = 2 + ((i * 3) % 8) * 0.4;
+    const depth = 1 + ((i * 5) % 9) * 0.6;
+    const price = 2 * height * width + 1.5 * depth + 3;
+    lines.push([height, width, depth, price].map(v => Number(v.toFixed(2))).join(','));
+  }
+
+  return lines.join('\n') + '\n';
+}
+
+// What an R² means, in words, for people new to it.
+function fitQuality(r2) {
+  if (r2 == null || !Number.isFinite(r2)) return '';
+  if (r2 >= 0.999) return 'Excellent fit';
+  if (r2 >= 0.99) return 'Very good fit';
+  if (r2 >= 0.9) return 'Good fit';
+  if (r2 >= 0.5) return 'Rough fit';
+  if (r2 >= 0) return 'Poor fit';
+  return 'Worse than guessing the average';
 }
 
 // Build training points from a parsed CSV: `targetIndex` is the column
@@ -1581,6 +1661,10 @@ if (typeof module !== 'undefined' && module.exports) {
     exportProgram,
     variableNames,
     parseCsv,
+    describeSkippedRows,
+    sampleCsv,
+    fitQuality,
+    formatShortNumber,
     datasetFromTable,
     validateConfig,
     validateConfigFields,

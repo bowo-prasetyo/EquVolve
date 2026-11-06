@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const s = require('../../shared.js');
 const {
-  useBrowser, appUrl, openApp, reload, storeSession, setSettings, startButton, waitForStatus
+  useBrowser, appUrl, openApp, reload, storeSession, setSettings, startButton, waitForStatus, restoreBanner
 } = require('./helpers');
 
 useBrowser();
@@ -165,9 +165,10 @@ function savedRun() {
 }
 
 async function openSavedRun(t) {
-  const page = await openApp(t, { dialogs: 'accept' });
+  const page = await openApp(t);
   await storeSession(page, savedRun());
   await reload(page);
+  await restoreBanner(page).getByRole('button', { name: 'Restore run' }).click();
   await waitForStatus(page, 'Restored session at generation 30.');
   return page;
 }

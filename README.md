@@ -84,7 +84,9 @@ height,width,depth,price
 - One column is the **target**, the value to predict: the last column by default. With three or more columns, the **Target column** menu lets you choose another.
 - Every other column is an **input**, named after its header (up to 10 inputs).
 - With **one input**, it is called `x`, and the chart shows the data with the fitted curve. With **several inputs**, the chart shows each row's predicted value against its actual value.
-- Rows with an empty cell, missing cells or text instead of a number are skipped.
+- Rows with an empty cell, missing cells or text instead of a number are skipped. The app says how many, and which lines of the file, with the reason (for example *Skipped 2 rows: line 4 (an empty cell); line 9 (text instead of a number).*).
+- Once loaded, a **preview** shows the first five rows as EquVolve reads them, with the target column marked, so you can check the columns before a run.
+- No file to hand? **Use sample data** loads a small example (the price of boxes from their height, width and depth), and **Download sample CSV** saves it, to see the format or use as a template.
 
 <details>
 <summary>CSV details</summary>
@@ -149,12 +151,14 @@ The default rates were chosen with the benchmark described under [Example result
 
 ### 3. Results: reading them
 
+- **Best R²:** how well the best program fits, with what that means in words: *Excellent fit* (0.999 or more), *Very good fit* (0.99), *Good fit* (0.9), *Rough fit* (0.5), *Poor fit* (0 or more) or *Worse than guessing the average* (below 0).
+
 - **Best program:** the best formula so far. The tabs show it as a plain formula, JavaScript, Python or LaTeX, and **Copy** puts the current tab on the clipboard. With several inputs, the exported function takes them as parameters, for example `(height, width, depth) => …`.
 - **Replay:** after a run (or while paused), **▶ Replay** plays through every improvement, and the slider jumps to any of them. The formula, export, fit chart and tree all follow the replay, and the progress chart marks its generation in blue. **Back to latest** returns to the current best.
 - **Fit chart:** with one input, the data (cyan dots) and the best program (red curve), with axes labelled in the input's and the target's units. With several inputs, each row's predicted value against its actual value; points on the red diagonal are predicted exactly. Both charts fit the width of the screen and stay sharp on high-resolution displays.
 - **Progress chart:** how close the best (red) and the median (grey) program are to a perfect fit in each generation. The scale shows R² 0.9, 0.99, 0.999 … at equal steps, so late, small improvements are as visible as early, large ones. The dashed green line is your Target R².
-- **Expression tree:** the best program as a tree. Each circle is labelled with its operator, variable or number; operators are orange, variables green and numbers khaki.
-- **Program size:** how many circles the tree has.
+- **Expression tree:** the best program as a tree. Each node is labelled with its operator, variable or number; operators are orange, variables green and numbers khaki. Nodes grow to fit their label, and long numbers are shortened (`1.76e-6`): point at one to see all its digits.
+- **Program size:** how many nodes the tree has.
 - **Speed:** generations per second.
 - **Recent generations:** the best program at each of the last five screen updates, newest first.
 
@@ -178,7 +182,7 @@ After a run, **Copy share link** copies a link that opens EquVolve with your set
 
 ### Restore after closing the browser
 
-Your run is saved in this browser as it goes. When you come back, EquVolve asks whether to restore your previous run. It comes back paused, with its results, charts, replay, settings and data: press **Resume** to continue. If you say no, the saved run is kept until your next run replaces it. See [Persistence](#persistence) for what is stored.
+Your run is saved in this browser as it goes. When you come back, a banner at the top of the page offers it, saying what it fits, how far it got and when it was saved. **Restore run** brings it back paused, with its results, charts, replay, settings and data: press **Resume** to continue. **Not now** keeps it saved for your next visit, and the page can be used straight away while the banner is shown; starting a new run replaces the saved one. See [Persistence](#persistence) for what is stored.
 
 ---
 
@@ -407,6 +411,7 @@ The About page renders this README, fetched live from the `main` branch. Its in-
 - Phase 1, restore trust: engine bug fixes, input validation, tests and CI, accurate documentation.
 - Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
 - Phase 3: multi-variable regression, animated replay, batched generations for speed, and experimental constant optimisation (off by default, with the benchmark that justifies it).
+- Usability, round 2: a banner instead of a dialog to restore a saved run, controls at least 44 px tall on phones (operator chips), tree nodes that fit long numbers and names, R² in words and results in the page's own font, and CSV sample data, a preview and a report of skipped rows.
 - Usability: the main button follows the next useful step (with **New run** and an **Undo** in place of a confirmation dialog), a hint and one-click fix for operators the formula needs, the advanced settings tucked away, run buttons that stay in view, every problem shown at once next to its setting, and charts with axes that stay sharp and readable on any screen.
 
 **Next**

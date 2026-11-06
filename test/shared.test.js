@@ -114,3 +114,30 @@ test('formulaOperators lists Math functions that are not operators, and ignores 
   assert.deepEqual(shared.formulaOperators('foo(x)'), { ops: [], unsupported: [] });
   assert.deepEqual(shared.formulaOperators(''), { ops: [], unsupported: [] });
 });
+
+test('fitQuality puts R² into words', () => {
+  assert.equal(shared.fitQuality(1), 'Excellent fit');
+  assert.equal(shared.fitQuality(0.999), 'Excellent fit');
+  assert.equal(shared.fitQuality(0.995), 'Very good fit');
+  assert.equal(shared.fitQuality(0.95), 'Good fit');
+  assert.equal(shared.fitQuality(0.7), 'Rough fit');
+  assert.equal(shared.fitQuality(0.1), 'Poor fit');
+  assert.equal(shared.fitQuality(-0.5), 'Worse than guessing the average');
+  assert.equal(shared.fitQuality(null), '');
+  assert.equal(shared.fitQuality(NaN), '');
+});
+
+test('formatShortNumber keeps tree labels short', () => {
+  assert.deepEqual(
+    [0.0000017645, 123456.78, -2.5, 0.30000000001, 12345.678, 0.001, 1e-7, 0, -0.00042].map(shared.formatShortNumber),
+    ['1.76e-6', '1.23e5', '-2.5', '0.3', '12350', '0.001', '1e-7', '0', '-4.2e-4']
+  );
+
+  // never more than 9 characters (as in -1.23e-12) for a wide spread of values
+  for (let e = -12; e <= 12; e++) {
+    for (const m of [1, -1.23456789, 9.87654321]) {
+      const label = shared.formatShortNumber(m * Math.pow(10, e));
+      assert.ok(label.length <= 9, `${m}e${e} -> ${label}`);
+    }
+  }
+});
