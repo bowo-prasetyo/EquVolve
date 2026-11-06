@@ -70,11 +70,39 @@ test('rows with empty, missing or non-numeric cells are skipped', async (t) => {
     '1.5;;3',    // empty cell
     '4;5',       // too few cells
     '6;seven;8', // not a number
-    '9\t10\t11', // tabs work too
-    '12,13,14,15' // extra cells are ignored
+    '9;10;11;',  // a trailing separator is fine
+    '12;13;14;15', // a cell past the header does not line up
+    '16;17;18'   // ok
   ].join('\n'));
 
   await loadedSummary(page).filter({ hasText: 'Loaded data.csv: 3 rows' }).waitFor();
+  assert.equal(
+    await page.locator('.skipped-rows').innerText(),
+    'Skipped 4 rows: line 3 (an empty cell); line 4 (missing cells); line 5 (text instead of a number); line 7 (too many cells).'
+  );
+});
+
+test('a semicolon CSV with decimal commas, as European spreadsheets save it, is read correctly', async (t) => {
+  const page = await openApp(t);
+
+  // y = 2x + 0.5, written with decimal commas
+  await uploadCsv(page, 'x;y\n0,5;1,5\n1,5;3,5\n2,5;5,5\n3,5;7,5\n', 'eu.csv');
+
+  await loadedSummary(page).filter({ hasText: 'Loaded eu.csv: 4 rows' }).waitFor();
+  assert.equal(
+    await page.locator('.csv-format').innerText(),
+    'Separated by semicolons, with decimal commas (1,5 is read as 1.5).'
+  );
+  assert.deepEqual(
+    await page.locator('table.preview tbody tr').first().locator('td').allInnerTexts(),
+    ['0.5', '1.5']
+  );
+  assert.equal(await page.locator('.skipped-rows').count(), 0);
+
+  // a plain comma-separated file needs no note
+  await uploadCsv(page, 'x,y\n1,2\n3,4\n', 'plain.csv');
+  await loadedSummary(page).filter({ hasText: 'Loaded plain.csv' }).waitFor();
+  assert.equal(await page.locator('.csv-format').count(), 0);
 });
 
 test('a CSV without a header row names its columns x1, x2, … and y', async (t) => {
