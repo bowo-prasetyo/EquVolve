@@ -22,6 +22,7 @@
   // out; ar-XB reads right to left, to check the mirrored layout.
   const LOCALES = {
     en: { name: 'English', intl: 'en-GB', dir: 'ltr' },
+    id: { name: 'Bahasa Indonesia', intl: 'id-ID', dir: 'ltr' },
     'en-XA': { name: 'Pseudo-English', intl: 'en-GB', numbers: 'de-DE', dir: 'ltr', pseudo: 'en', transform: 'accents' },
     'ar-XB': { name: 'Pseudo-Bidi', intl: 'en-GB', dir: 'rtl', pseudo: 'en', transform: 'bidi' }
   };
@@ -35,6 +36,19 @@
   const catalogs = {}; // locale -> { key: message }
   let current = DEFAULT_LOCALE;
   const warned = new Set();
+
+  // Called whenever a message or a number is put into words, so a
+  // reactive UI can track which of its parts depend on the language and
+  // redraw them when it changes (see observe()).
+  let onRead = null;
+
+  function observe(fn) {
+    onRead = fn;
+  }
+
+  const read = () => {
+    if (onRead) onRead();
+  };
 
   // =========================================================
   // PARSING
@@ -188,6 +202,7 @@
   // Only for numbers shown as values: formulas, exports and anything the
   // user may copy into code keep a decimal point.
   function number(value, options = {}, locale = current) {
+    read();
     const tag = numberLocale(locale);
     const key = `${tag}|${JSON.stringify(options)}`;
     if (!numberFormats.has(key)) {
@@ -200,6 +215,7 @@
   // or "a, b, c" (unit, for lists that are not part of a sentence).
   // Numbers in it are localized.
   function list(items, type = 'conjunction') {
+    read();
     const tag = intlLocale();
     const key = `${tag}|${type}`;
     if (!listFormats.has(key)) {
@@ -263,6 +279,7 @@
   }
 
   function lookup(key) {
+    read();
     for (const locale of [current, LOCALES[current] && LOCALES[current].pseudo, DEFAULT_LOCALE]) {
       const catalog = locale && catalogs[locale];
       if (catalog && Object.prototype.hasOwnProperty.call(catalog, key)) return catalog[key];
@@ -463,6 +480,24 @@
     return out;
   }
 
+  // The languages a visitor can choose, as { code, name } with each
+  // name in its own language. Test languages are listed only while one
+  // is in use.
+  function choices() {
+    return Object.keys(LOCALES)
+      .filter(code => !LOCALES[code].pseudo || code === current)
+      .map(code => ({ code, name: LOCALES[code].name }));
+  }
+
+  // Keep a visitor's choice for their next visit.
+  function remember(locale) {
+    try {
+      root.localStorage.setItem(STORAGE_KEY, locale);
+    } catch (e) {
+      // storage can be blocked; the choice then lasts until the page closes
+    }
+  }
+
   // The language this page should start in, from the address, storage
   // and browser settings.
   function preferredLocale() {
@@ -496,6 +531,9 @@
     pseudoCatalog,
     negotiate,
     preferredLocale,
+    choices,
+    remember,
+    observe,
     direction,
     intlLocale,
     setMessages,

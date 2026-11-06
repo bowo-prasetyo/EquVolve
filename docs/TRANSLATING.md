@@ -4,6 +4,8 @@ This guide is for people translating EquVolve's interface, and for developers ad
 
 Every word the app shows comes from one file per language in [`locales/`](../locales). English, [`locales/en.json`](../locales/en.json), is the source and the fallback: a message missing from a translation is shown in English.
 
+The app is available in English and Indonesian ([`locales/id.json`](../locales/id.json)). Visitors get their browser's language if the app has it, and can switch with the menu in the top bar; the change is immediate and remembered in their browser.
+
 ## The message files
 
 Each file is a flat JSON object of keys and messages:
@@ -40,6 +42,8 @@ Write the forms your language needs. Each form starts with a [CLDR plural catego
 
 Polish, for example, needs `one`, `few`, `many` and `other`; Japanese and Indonesian need only `other`. `=0`, `=1`, … match one exact number.
 
+A language without plural forms may drop a plural that only chooses a word, and write the placeholder directly. Indonesian, for example, writes `"{count} baris"` for English's `"{count, plural, one {# row} other {# rows}}"`, and `"baris {lines} ({reason})"` for `"{count, plural, one {line} other {lines}} {lines} ({reason})"`, leaving out `count`, whose value English never shows there. A placeholder whose value is shown must always be kept.
+
 ### Selects
 
 A select picks a wording from a value the app passes. Translate the text inside the braces, never the words before them:
@@ -74,7 +78,20 @@ No other markup is allowed; the tests reject it.
 1. Copy `locales/en.json` to `locales/<code>.json`, where `<code>` is a [BCP 47 language tag](https://www.w3.org/International/articles/language-tags/) such as `de`, `pt-BR` or `zh-Hans`, and translate the messages.
 2. Register the language in `LOCALES` at the top of [`i18n.js`](../i18n.js): its name in its own language, the locale used for plural, list and number formatting (`intl`, for example `ar-EG` for Arabic digits or `ar` for Western ones), and `dir: 'rtl'` for languages written right to left.
 3. Serve the folder (`python3 -m http.server 8000`) and open `http://localhost:8000/?lang=<code>#/`. Without `?lang=`, the app follows the browser's language.
-4. Run `npm test`: it checks that every message is valid and keeps the English placeholders and markup.
+4. Run `npm test`. It checks that every message is valid, keeps the English placeholders and markup, and that the translation is complete. It also lists every message that is still identical to English: if one is right as it is (in Indonesian, "1. Data" and "Target R²" are), add its key to `SAME_AS_ENGLISH` in `test/locales.test.js`.
+5. Add the language to the menu's tests in `test/ui/language.test.js` if it needs anything special, such as right-to-left layout.
+
+## Translating the README
+
+The About page shows the README in the interface's language: `README.<code>.md` (such as [`README.id.md`](../README.id.md)), fetched from the `main` branch, or the English one if there is none yet.
+
+- Add the file to `README_FILES` in `app.js`, and a link to it at the top of the English README.
+- Translate the headings too, and point its in-page links (`#…`) at your headings' anchors: GitHub's, which the About page also uses (lowercase, punctuation removed, spaces as hyphens, so `## Jika proses tidak mencapai target` is `#jika-proses-tidak-mencapai-target`).
+- Link to other files with their full GitHub address, not a relative path: the About page shows the README on the app's own site, where `docs/…` does not exist.
+- The developer sections may be summarised with a link to the English README; they change most often.
+- Name buttons and settings exactly as your translation of the interface does.
+
+`npm test` checks every README's in-page links and its links to other files.
 
 ## The pseudo-locales (for developers)
 

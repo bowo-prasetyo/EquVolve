@@ -31,7 +31,17 @@
   <nav>
     <router-link to="/">{{ $t('nav.home') }}</router-link>
     <router-link to="/about">{{ $t('nav.about') }}</router-link>
-    <button type="button" class="theme-toggle small" :title="themeTitle" :aria-label="themeTitle" @click="cycleTheme">{{ themeLabel }}</button>
+    <span class="nav-end">
+      <select
+        class="language-select small"
+        :aria-label="$t('nav.language')"
+        :value="language"
+        @change="setLanguage($event.target.value)"
+      >
+        <option v-for="l in languages" :key="l.code" :value="l.code" :lang="l.code" translate="no">{{ l.name }}</option>
+      </select>
+      <button type="button" class="theme-toggle small" :title="themeTitle" :aria-label="themeTitle" @click="cycleTheme">{{ themeLabel }}</button>
+    </span>
   </nav>
 
   <router-view></router-view>

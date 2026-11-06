@@ -7,6 +7,13 @@
 const t = (key, params) => I18n.t(key, params);
 const th = (key, params) => I18n.html(key, params);
 
+// A message to show later, as a function giving its text: stored
+// messages (status, errors, button labels) are put into words when they
+// are shown, so they follow a change of language. $text() in templates
+// shows either kind.
+const later = (key, params) => () => t(key, params);
+const textOf = (v) => (typeof v === 'function' ? v() : v);
+
 // Whole sentences run together, as the language writes them (with a
 // space in English, none in Chinese or Japanese). Empty ones are left out.
 const sentences = (...items) => items.filter(Boolean).join(t('sentence.separator'));
@@ -394,7 +401,7 @@ const Home = {
           <li v-for="(e, i) in validationErrors" :key="'v' + i">
             <a :href="'#' + e.field" @click.prevent="focusField(e.field)">{{ e.message }}</a>
           </li>
-          <li v-for="(msg, i) in errorMessages" :key="'m' + i">{{ msg }}</li>
+          <li v-for="(msg, i) in errorMessages" :key="'m' + i">{{ $text(msg) }}</li>
         </ul>
       </div>
 
@@ -407,9 +414,9 @@ const Home = {
         <span v-html="$th('run.unsupported', { names: codeList(formulaUse.unsupported), count: formulaUse.unsupported.length })"></span>
       </div>
 
-      <div v-if="statusMessage" class="run-message status" role="status">
-        <span>{{ statusMessage }}</span>
-        <button v-if="undo" class="small" @click="undoLast">{{ undo.label }}</button>
+      <div v-if="$text(statusMessage)" class="run-message status" role="status">
+        <span>{{ $text(statusMessage) }}</span>
+        <button v-if="undo" class="small" @click="undoLast">{{ $text(undo.label) }}</button>
       </div>
 
       <div class="controls">
@@ -503,7 +510,7 @@ const Home = {
               :translate="f.labelKey ? null : 'no'"
             >{{ f.labelKey ? $t(f.labelKey) : f.label }}</button>
 
-            <button class="small" @click="copyExport">{{ copyLabel }}</button>
+            <button class="small" @click="copyExport">{{ $text(copyLabel) }}</button>
           </div>
 
           <pre class="code export-text">{{ exportText }}</pre>
@@ -606,6 +613,8 @@ const Home = {
 
       // ui
       evolutionState: 'idle', // idle | running | paused
+      // Messages shown until replaced. Each is a function giving its text
+      // (see later()), so it follows a change of language.
       statusMessage: '',
       errorMessages: [], // problems not tied to a setting (CSV, share link)
       showValidation: false, // after a failed Start/Resume, re-check as the user edits
@@ -613,7 +622,7 @@ const Home = {
       undo: null, // { label, state }: the run that Clear Results or New run replaced
       savedRun: null, // the checkpoint from an earlier visit, offered for restoring
       exportFormat: 'plain',
-      copyLabel: t('export.copy'),
+      copyLabel: later('export.copy'),
       shareUrl: '',
 
       // a checkpoint is written whenever the best fitness improves,
@@ -885,6 +894,7 @@ const Home = {
       this.drawProgress();
     };
     window.addEventListener(THEME_CHANGE_EVENT, this.redrawCharts);
+    window.addEventListener(LANGUAGE_CHANGE_EVENT, this.redrawCharts);
 
     // and at their new size when the window (or zoom) changes their width;
     // redrawn on the next frame, as resizing a canvas inside the
@@ -913,6 +923,7 @@ const Home = {
   beforeUnmount() {
     this.pauseReplay();
     window.removeEventListener(THEME_CHANGE_EVENT, this.redrawCharts);
+    window.removeEventListener(LANGUAGE_CHANGE_EVENT, this.redrawCharts);
     this.resizeObserver?.disconnect();
 
     if (this.worker) {
@@ -1109,7 +1120,7 @@ const Home = {
       this.replayIndex = null;
 
       this.evolutionState = 'paused';
-      this.statusMessage = t('status.restored', { generation: this.generation });
+      this.statusMessage = later('status.restored', { generation: this.generation });
 
       this.latestPopulation = (state.population || [])
         .map(decompressTree)
@@ -1297,7 +1308,7 @@ const Home = {
       this.worker.postMessage({ type: 'stop' });
 
       this.evolutionState = 'paused';
-      this.statusMessage = t('status.paused');
+      this.statusMessage = later('status.paused');
 
       // make sure the paused state survives a browser shutdown (saved
       // again with the exact population when the worker confirms)
@@ -1318,7 +1329,8 @@ const Home = {
 
       // Resuming now would stop again at once: point at the setting to raise.
       if (this.resumeBlocker) {
-        this.statusMessage = this.resumeHint;
+        // follows the settings and the language while it is shown
+        this.statusMessage = () => this.resumeHint;
         if (this.resumeBlocker !== 'perfect') this.focusField(this.resumeBlocker);
         return;
       }
@@ -1346,7 +1358,7 @@ const Home = {
       const previous = this.best ? this.checkpointState() : null;
 
       this.launch(config);
-      this.offerUndo(previous, t('status.newRun'), t('status.undoNewRun'));
+      this.offerUndo(previous, later('status.newRun'), later('status.undoNewRun'));
     },
 
     // Clear the results and the saved run straight away; Undo brings
@@ -1375,7 +1387,7 @@ const Home = {
         tx.objectStore('sessions').delete('latest');
       }
 
-      this.offerUndo(previous, t('status.cleared'), t('status.undo'));
+      this.offerUndo(previous, later('status.cleared'), later('status.undo'));
     },
 
     offerUndo(state, message, label) {
@@ -1400,7 +1412,7 @@ const Home = {
       this.errorMessages = [];
       this.showValidation = false;
       this.restoreSession(state);
-      this.statusMessage = t('status.broughtBack', { generation: this.generation });
+      this.statusMessage = later('status.broughtBack', { generation: this.generation });
       this.saveCheckpoint(true);
     },
 
@@ -1425,8 +1437,8 @@ const Home = {
           this.evolutionState = 'paused';
 
           this.statusMessage = msg.reason === 'targetReached' ?
-            t('status.targetReached', { generation: msg.generation }) :
-            t('status.maxGenerations', { generation: msg.generation });
+            later('status.targetReached', { generation: msg.generation }) :
+            later('status.maxGenerations', { generation: msg.generation });
         }
 
         this.saveBest();
@@ -1568,9 +1580,9 @@ const Home = {
     async copyExport() {
       const ok = await this.copyText(this.exportText);
 
-      this.copyLabel = ok ? t('export.copied') : t('export.copyFailed');
+      this.copyLabel = ok ? later('export.copied') : later('export.copyFailed');
 
-      setTimeout(() => { this.copyLabel = t('export.copy'); }, 2000);
+      setTimeout(() => { this.copyLabel = later('export.copy'); }, 2000);
     },
 
     async shareRun() {
@@ -1589,11 +1601,10 @@ const Home = {
 
       const copied = await this.copyText(url);
 
-      this.statusMessage = sentences(
+      const omitted = payload.datasetOmitted;
+      this.statusMessage = () => sentences(
         copied ? t('share.copied') : t('share.created'),
-        payload.datasetOmitted ?
-          t('share.datasetOmitted', { max: MAX_SHARED_POINTS }) :
-          t('share.contents')
+        omitted ? t('share.datasetOmitted', { max: MAX_SHARED_POINTS }) : t('share.contents')
       );
     },
 
@@ -1620,9 +1631,10 @@ const Home = {
           this.generation = shared.generation ?? 0;
         }
 
-        this.statusMessage = sentences(
+        const { bestR2: r2, generation } = this;
+        this.statusMessage = () => sentences(
           shared.model ?
-            t('share.loadedRun', { r2: this.formatR2(this.bestR2), generation: this.generation }) :
+            t('share.loadedRun', { r2: this.formatR2(r2), generation }) :
             t('share.loadedSettings'),
           shared.datasetOmitted ?
             t('share.datasetMissing') :
@@ -1632,7 +1644,7 @@ const Home = {
         this.drawCanvas();
       } catch (e) {
         console.error(e);
-        this.errorMessages = [t('share.unreadable')];
+        this.errorMessages = [later('share.unreadable')];
       }
 
       // drop the code from the address bar so a reload is a clean start
@@ -1659,8 +1671,7 @@ const Home = {
       const table = parseCsv(text);
 
       if (table.headers.length < 2 || !table.rows.length) {
-        const skipped = describeSkippedRows(table.skipped);
-        this.errorMessages = [sentences(t('csv.error.columns'), skipped)];
+        this.errorMessages = [() => sentences(t('csv.error.columns'), describeSkippedRows(table.skipped))];
         return;
       }
 
@@ -2089,7 +2100,10 @@ function layoutTree(root) {
   };
 }
 
-const README_URL = 'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/README.md';
+// The README in each language that has one; others show the English one.
+// Fetched from the main branch, so a change shows once it is merged.
+const README_BASE = 'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/';
+const README_FILES = { en: 'README.md', id: 'README.id.md' };
 
 // The anchor GitHub gives a heading, so the README's in-page links
 // (such as #example-results) work here as they do on GitHub:
@@ -2111,29 +2125,58 @@ const About = {
 
   data() {
     return {
-      content: I18n.escapeHtml(t('about.loading'))
+      state: 'loading', // loading | failed | ready
+      readme: ''
     };
   },
 
-  async mounted() {
-    try {
-      const response = await fetch(README_URL);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      this.content = marked.parse(await response.text());
-
-      await this.$nextTick();
-      this.addHeadingIds();
-    } catch (e) {
-      this.content = `<p>${I18n.escapeHtml(t('about.failed'))}</p>`;
-      console.error(e);
+  computed: {
+    content() {
+      if (this.state === 'ready') return this.readme;
+      const text = I18n.escapeHtml(t(this.state === 'failed' ? 'about.failed' : 'about.loading'));
+      return this.state === 'failed' ? `<p>${text}</p>` : text;
     }
   },
 
+  watch: {
+    // a change of language brings the README in that language
+    '$language'() {
+      this.load();
+    }
+  },
+
+  mounted() {
+    this.load();
+  },
+
   methods: {
+    // The README in the interface's language, or the English one if
+    // there is none (yet) or it cannot be loaded.
+    async load() {
+      const files = [README_FILES[I18n.locale], README_FILES.en].filter(Boolean);
+
+      for (const file of [...new Set(files)]) {
+        try {
+          const response = await fetch(README_BASE + file);
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} for ${file}`);
+          }
+
+          this.readme = marked.parse(await response.text());
+          this.state = 'ready';
+
+          await this.$nextTick();
+          this.addHeadingIds();
+          return;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      this.state = 'failed';
+    },
+
     addHeadingIds() {
       const used = new Set();
 
@@ -2214,12 +2257,28 @@ function applyTheme(preference) {
   window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
 }
 
+// The interface's language, as reactive state: I18n reports every
+// message and number it writes (I18n.observe), so whatever shows one is
+// redrawn when the language changes, without reloading the page.
+const language = Vue.reactive({ code: I18n.locale });
+I18n.observe(() => language.code);
+
+// Sent on window after the language changes, for what Vue does not draw
+// (the canvas charts).
+const LANGUAGE_CHANGE_EVENT = 'equvolve:languagechange';
+
 const app = Vue.createApp({
   data() {
     return { themePreference: readThemePreference() };
   },
 
   computed: {
+    language() {
+      return language.code;
+    },
+    languages() {
+      return language.code && I18n.choices();
+    },
     themeLabel() {
       return t(THEME_LABELS[this.themePreference]);
     },
@@ -2229,6 +2288,20 @@ const app = Vue.createApp({
   },
 
   methods: {
+    // Switch the interface to another language at once, and remember it.
+    // A ?lang= in the address is dropped, so a reload keeps the choice.
+    async setLanguage(code) {
+      await I18n.load(code);
+      I18n.remember(I18n.locale);
+      language.code = I18n.locale;
+
+      if (new URLSearchParams(location.search).has('lang')) {
+        history.replaceState(history.state, '', location.pathname + location.hash);
+      }
+
+      window.dispatchEvent(new Event(LANGUAGE_CHANGE_EVENT));
+    },
+
     cycleTheme() {
       const next = THEME_ORDER[(THEME_ORDER.indexOf(this.themePreference) + 1) % THEME_ORDER.length];
       this.themePreference = next;
@@ -2257,7 +2330,12 @@ app.config.globalProperties.$t = t;
 app.config.globalProperties.$th = th;
 app.config.globalProperties.$list = (items, type) => I18n.list(items, type);
 app.config.globalProperties.$n = (value, options) => I18n.number(value, options);
+app.config.globalProperties.$text = textOf;
+Object.defineProperty(app.config.globalProperties, '$language', { get: () => language.code });
 
-// The page's language is chosen once, before the app is shown, from
-// ?lang=, the stored choice and the browser's languages (see i18n.js).
-I18n.load(I18n.preferredLocale()).then(() => app.mount('#app'));
+// The page starts in the language from ?lang=, the stored choice or the
+// browser's languages (see i18n.js); the switcher changes it later.
+I18n.load(I18n.preferredLocale()).then((code) => {
+  language.code = code;
+  app.mount('#app');
+});
