@@ -16,7 +16,7 @@ index.html ──loads──▶ shared.js ──▶ app.js (Vue UI, main thread)
 
 - **`shared.js`** holds the code both sides need: the operator table, formula checks and sampling, tree evaluation, simplification, printing and export, CSV parsing, config validation and normalisation, and share links. The UI draws curves with the same `evaluateTree` the engine scores with, so what you see is what was scored. In Node it exports its functions through `module.exports` for the tests. In the browser they are globals.
 - **`worker.js`** is the engine. It owns the population and the training points, runs generations, and sends results to the page. It never touches the DOM or storage.
-- **`app.js`** is the UI: inputs, validation messages, charts (canvas), the expression tree (SVG), replay, export, share links, IndexedDB persistence, the theme toggle and the About page. The About page fetches `README.md` from the `main` branch on GitHub and renders it with Marked. A README change shows up in the live app only once it is merged to `main`.
+- **`app.js`** is the UI: inputs, validation messages, charts (canvas), the expression tree (SVG), replay, export, share links, IndexedDB persistence, the theme toggle and the About page. The About page fetches `README.md` from the `main` branch on GitHub (`README_URL`) and renders it with Marked. A README change shows up in the live app only once it is merged to `main`. Marked adds no heading IDs, so `addHeadingIds()` gives each heading the anchor GitHub would (`headingSlug()`: lowercase, punctuation removed, spaces as hyphens, `-1`, `-2`, … on repeats). A click on a `#section` link scrolls to it instead of navigating: the routes live in the URL hash, so `#example-results` would otherwise be read as a route and show a blank page.
 
 Routing uses hash history (`#/`, `#/about`), so the site works on any static host, including GitHub Pages. Workers cannot load from `file://`, so serve the folder over HTTP (`python3 -m http.server 8000`).
 
@@ -154,6 +154,7 @@ npm run test:ui
 - `helpers.js` holds the shared setup: `useBrowser()` starts the server and Chromium for a test file, and `openApp(t, options)` opens the app in a new browser context, so no IndexedDB session, restore prompt or theme choice carries over between tests. Any uncaught page error fails the test.
 - Dialogs (the restore prompt, Clear Results' confirmation) are dismissed unless a test sets `openApp(t, { dialogs: 'accept' })` or `page.answerDialogs = 'accept'`. Every dialog's message is recorded in `page.dialogs`.
 - `openTab(page, url)` opens another tab in the same context, and `reload(page)` reloads, both sharing IndexedDB and `localStorage`, to test what survives closing the page. `storedSession(page)` reads the saved checkpoint without creating or upgrading the database.
+- The About page's README request is answered with this checkout's `README.md`, so the tests check the README being changed and do not depend on what is merged. Pass `openApp(t, { readme: handler })` with a Playwright route handler to simulate a failure. Because every in-page link must point at a heading, renaming a README heading without updating its links fails `about.test.js`.
 - The page loads its libraries from jsDelivr, so the tests need network access.
 
 | File | Covers |
@@ -162,13 +163,14 @@ npm run test:ui
 | `run-controls.test.js` | Start, Stop and Resume (settings locked while running, the engine really stopped, Resume continuing rather than restarting), Max Generations and target R² endings, validation on Resume, and Clear Results with its confirmation |
 | `restore-session.test.js` | Restoring a finished or stopped run (settings, results, dataset and file name) and resuming it, declining the restore, Clear Results deleting the session, and share links not offering a restore |
 | `replay.test.js` | Stepping through improvements with the slider (formula, export and tree follow), Back to latest, playing to the end, pausing, and the replay hiding during a run |
+| `about.test.js` | The README rendering (logo and tables included), GitHub-style heading anchors, every in-page link pointing at a heading, links scrolling instead of changing the route, and the message when the README cannot be loaded |
 | `theme.test.js` | Auto following the device (also when it switches), the Auto → Light → Dark cycle, the saved choice surviving a reload and overriding the device, the `<head>` script applying it before the app starts, and the toggle on the About page |
 
 Write tests that cannot pass by luck. Runs that must finish use data that linear scaling solves in a few generations. Runs that must not finish use Target R² 1 with a target the operators cannot fit exactly, such as `sin(x)` with `+ - *`. To prove that a resumed run continues, `recordGenerations(page)` records every value the Generation counter shows. Use Slow speed when the generations in question would otherwise arrive in a single Fast batch.
 
 Prefer finding elements by role, label or visible text, as these tests do, over CSS classes, so styling changes do not break them. Note that an `aria-label` replaces a button's visible text as its name (the replay button is "Play replay", not "▶ Replay").
 
-Not covered yet: what the canvas charts draw, operator presets, the Copy buttons (headless Chromium has no clipboard permission by default) and the About page's content. Check changes there in a browser.
+Not covered yet: what the canvas charts draw, operator presets and the Copy buttons (headless Chromium has no clipboard permission by default). Check changes there in a browser.
 
 ## Benchmark
 

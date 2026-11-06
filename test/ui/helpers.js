@@ -2,8 +2,24 @@
 // per test file, and helpers to open and drive the app.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
 const { chromium } = require('playwright');
 const { startServer } = require('./server');
+
+// The About page fetches the README from GitHub's main branch. Tests
+// answer with this checkout's README instead, so they check the README
+// being changed and do not depend on what is merged.
+const README_URL = 'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/README.md';
+const LOCAL_README = path.join(__dirname, '..', '..', 'README.md');
+
+function serveLocalReadme(route) {
+  return route.fulfill({
+    status: 200,
+    contentType: 'text/plain; charset=utf-8',
+    body: fs.readFileSync(LOCAL_README, 'utf8')
+  });
+}
 
 let server;
 let browser;
@@ -29,11 +45,15 @@ const appUrl = () => server.url;
 // options.colorScheme: 'light' | 'dark' (the device setting to emulate)
 // options.dialogs: 'dismiss' (default) | 'accept', changeable later
 //   with page.answerDialogs = 'accept'
+// options.readme: a Playwright route handler for the README request
+//   (default: serve the local README.md)
 //
 // Every dialog's message is recorded in page.dialogs. Uncaught page
 // errors fail the test.
 async function openApp(t, options = {}) {
   const context = await browser.newContext({ colorScheme: options.colorScheme || 'dark' });
+  await context.route(README_URL, options.readme || serveLocalReadme);
+
   const page = await context.newPage();
   const errors = [];
 
@@ -174,6 +194,7 @@ async function waitForStatus(page, text, timeout = 30000) {
 }
 
 module.exports = {
+  README_URL,
   useBrowser,
   appUrl,
   openApp,
