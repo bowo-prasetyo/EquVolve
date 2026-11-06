@@ -223,8 +223,11 @@ const runBar = (page) => page.locator('.run-bar');
 const restoreBanner = (page) => page.getByRole('region', { name: 'Continue where you left off?' });
 const status = (page) => page.getByRole('status');
 const errorBox = (page) => page.getByRole('alert');
+// The Generation counter as a number. It is written with thousands
+// separators (1,234), like every number the page shows.
+const readCount = (text) => Number(String(text).replace(/[^\d.-]/g, ''));
 const generation = async (page) =>
-  Number(await page.locator('.stat', { hasText: 'Generation' }).locator('b').innerText());
+  readCount(await page.locator('.stat', { hasText: 'Generation' }).locator('b').innerText());
 
 // Start recording every value the Generation counter shows; the returned
 // function gives the values seen so far. Used to prove that a resumed
@@ -235,7 +238,7 @@ async function recordGenerations(page) {
     const value = stat.querySelector('b');
 
     window.__generationsSeen = [];
-    new MutationObserver(() => window.__generationsSeen.push(Number(value.textContent)))
+    new MutationObserver(() => window.__generationsSeen.push(Number(value.textContent.replace(/[^\d.-]/g, ''))))
       .observe(value, { childList: true, characterData: true, subtree: true });
   });
 

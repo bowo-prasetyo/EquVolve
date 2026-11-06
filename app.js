@@ -187,6 +187,7 @@ const Home = {
           <label class="field-label" for="formula">{{ $t('data.formula') }}</label>
           <input
             id="formula"
+            dir="ltr"
             class="wide"
             v-model="targetFormula"
             placeholder="x*x + 2"
@@ -265,7 +266,7 @@ const Home = {
               </thead>
               <tbody>
                 <tr v-for="(row, i) in previewRows" :key="i">
-                  <td v-for="(v, j) in row" :key="j" :class="{ target: previewColumns[j].target }">{{ v }}</td>
+                  <td v-for="(v, j) in row" :key="j" :class="{ target: previewColumns[j].target }">{{ $n(v, { useGrouping: false }) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -439,7 +440,7 @@ const Home = {
     </div>
 
     <div v-if="shareUrl" class="field-row">
-      <input class="wide" readonly :value="shareUrl" @focus="$event.target.select()" :aria-label="$t('run.shareLink')">
+      <input class="wide" dir="ltr" readonly :value="shareUrl" @focus="$event.target.select()" :aria-label="$t('run.shareLink')">
     </div>
 
     <!-- ===================== 3. RESULTS ===================== -->
@@ -447,12 +448,12 @@ const Home = {
       <h2>{{ $t('results.title') }}</h2>
 
       <div class="stat-row">
-        <div class="stat"><span>{{ $t('results.generation') }}</span><b>{{ generation }}</b></div>
+        <div class="stat"><span>{{ $t('results.generation') }}</span><b>{{ $n(generation) }}</b></div>
         <div class="stat">
           <span>{{ $t('results.bestR2') }}</span><b>{{ formatR2(bestR2) }}</b>
           <small v-if="bestR2 != null" class="fit-quality" :class="fitClass(bestR2)">{{ fitQuality(bestR2) }}</small>
         </div>
-        <div class="stat"><span>{{ $t('results.size') }}</span><b>{{ bestSize ?? '–' }}</b></div>
+        <div class="stat"><span>{{ $t('results.size') }}</span><b>{{ bestSize == null ? '–' : $n(bestSize) }}</b></div>
         <div class="stat"><span>{{ $t('results.speed') }}</span><b>{{ speedText }}</b></div>
       </div>
 
@@ -470,6 +471,7 @@ const Home = {
 
           <input
             type="range"
+            dir="ltr"
             min="0"
             :max="timeline.length - 1"
             step="1"
@@ -512,7 +514,7 @@ const Home = {
         <figure>
           <figcaption v-if="isMultiVariable" v-html="$th('chart.fit.multi')"></figcaption>
           <figcaption v-else v-html="$th('chart.fit.single')"></figcaption>
-          <canvas ref="canvas" width="600" height="300"></canvas>
+          <canvas ref="canvas" width="600" height="300" dir="ltr"></canvas>
         </figure>
 
         <figure>
@@ -520,7 +522,7 @@ const Home = {
             <span v-html="$th('chart.progress')"></span>
             <span v-if="replayEntry" class="key blue">{{ $t('chart.progress.replay') }}</span>
           </figcaption>
-          <canvas ref="progress" width="600" height="300"></canvas>
+          <canvas ref="progress" width="600" height="300" dir="ltr"></canvas>
         </figure>
       </div>
 
@@ -660,7 +662,8 @@ const Home = {
 
     speedText() {
       if (!this.gensPerSecond) return '–';
-      const value = this.gensPerSecond >= 10 ? Math.round(this.gensPerSecond) : this.gensPerSecond.toFixed(1);
+      const digits = this.gensPerSecond >= 10 ? 0 : 1;
+      const value = I18n.number(this.gensPerSecond, { minimumFractionDigits: digits, maximumFractionDigits: digits });
       return t('results.speedValue', { value });
     },
 
@@ -939,7 +942,9 @@ const Home = {
 
     formatR2(r2) {
       if (r2 == null || !Number.isFinite(r2)) return '–';
-      return r2 >= 0.99 ? r2.toFixed(6) : r2.toFixed(4);
+      // more digits once the fit is close, where the differences are small
+      const digits = r2 >= 0.99 ? 6 : 4;
+      return I18n.number(r2, { minimumFractionDigits: digits, maximumFractionDigits: digits });
     },
 
     isPreset(preset) {
@@ -1937,11 +1942,11 @@ const Home = {
       }
 
       ctx.textAlign = 'center';
-      ctx.fillText('generation', (plot.left + plot.right) / 2, H - 8);
+      ctx.fillText(t('chart.axis.generation'), (plot.left + plot.right) / 2, H - 8);
       ctx.textAlign = 'left';
-      ctx.fillText('1', plot.left, H - 8);
+      ctx.fillText(I18n.number(1), plot.left, H - 8);
       ctx.textAlign = 'right';
-      ctx.fillText(String(maxG), plot.right, H - 8);
+      ctx.fillText(I18n.number(maxG), plot.right, H - 8);
 
       // target line
       if (Number.isFinite(this.targetR2) && this.targetR2 < 1) {
@@ -2247,10 +2252,11 @@ const app = Vue.createApp({
 
 app.use(router);
 
-// $t, $th and $list in templates: see t, th and I18n.list.
+// $t, $th, $list and $n in templates: see t, th, I18n.list and I18n.number.
 app.config.globalProperties.$t = t;
 app.config.globalProperties.$th = th;
 app.config.globalProperties.$list = (items, type) => I18n.list(items, type);
+app.config.globalProperties.$n = (value, options) => I18n.number(value, options);
 
 // The page's language is chosen once, before the app is shown, from
 // ?lang=, the stored choice and the browser's languages (see i18n.js).

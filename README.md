@@ -418,12 +418,12 @@ The About page renders this README, fetched live from the `main` branch. Its in-
 - Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
 - Phase 3: multi-variable regression, animated replay, batched generations for speed, and experimental constant optimisation (off by default, with the benchmark that justifies it).
 - Usability, round 2: a banner instead of a dialog to restore a saved run, controls at least 44 px tall on phones (operator chips), tree nodes that fit long numbers and names, R² in words and results in the page's own font, and CSV sample data, a preview and a report of skipped rows.
-- Ready for translation: every word of the interface in one message file per language, with proper plurals and lists, a test language that finds untranslated text, and a [translation guide](docs/TRANSLATING.md).
+- Ready for translation: every word of the interface in one message file per language, with proper plurals and lists, numbers written the way each language writes them, a layout that mirrors for right-to-left languages and wraps for longer ones, test languages that find untranslated text and layout problems, and a [translation guide](docs/TRANSLATING.md).
 - Usability: the main button follows the next useful step (with **New run** and an **Undo** in place of a confirmation dialog), a hint and one-click fix for operators the formula needs, the advanced settings tucked away, run buttons that stay in view, every problem shown at once next to its setting, and charts with axes that stay sharp and readable on any screen.
 
 **Next**
 
-- Translations of the interface, with a language switcher, and numbers formatted the way each language writes them
+- Translations of the interface, with a language switcher
 - Constant optimisation that keeps population diversity, for example applied only when the search stagnates, or to offspring before they compete
 - Train/test split for datasets, so users can see whether a formula generalises
 - Upload a CSV and fit only some of its columns

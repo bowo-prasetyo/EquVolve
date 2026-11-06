@@ -155,6 +155,7 @@
   "chart.progress": "Progress per generation (log scale of 1 − R²): <span class=\"key red\">best</span> <span class=\"key grey\">median</span> <span class=\"key green\">target</span>",
   "chart.progress.replay": "replay",
   "chart.axis.actual": "{hasName, select, yes {actual {name}} other {actual}}",
+  "chart.axis.generation": "generation",
   "chart.axis.predicted": "{hasName, select, yes {predicted {name}} other {predicted}}",
 
   "tree.title": "Expression tree",

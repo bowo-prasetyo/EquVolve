@@ -197,3 +197,17 @@ test('progressGeometry spans the generations and the R² levels', () => {
   close(g.toY(1), g.plot.bottom);
   assert.equal(s.progressGeometry(1, 600, 300).maxG, 2);
 });
+
+test('tick and grid labels follow the interface\'s way of writing numbers', () => {
+  const I18n = require('../i18n.js');
+  I18n.setMessages('en-XA', I18n.pseudoCatalog(require('../locales/en.json'), 'accents'));
+  I18n.setLocale('en-XA'); // numbers as in German: 0,5 and 1.234
+
+  try {
+    assert.deepEqual([0, -2.5, 0.3, 1000, 123456, 0.0001234].map(s.formatTick),
+      ['0', '-2,5', '0,3', '1000', '1,2e5', '1,2e-4'], 'no thousands separators on an axis');
+    assert.deepEqual(s.progressGrid().map(l => l.label).slice(0, 3), ['R² 0', 'R² 0,9', 'R² 0,99']);
+  } finally {
+    I18n.setLocale('en');
+  }
+});
