@@ -274,7 +274,7 @@ GP_TEST_SEED=42 npm test
 GP_TEST_SEED=random npm test
 ```
 
-The UI has browser tests for CSV upload, Start / Stop / Resume, restoring a saved session, replay and the theme toggle. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
+The UI has browser tests for CSV upload, Start / Stop / Resume, restoring a saved session, replay, operator presets, the Copy buttons, the About page and the theme toggle. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
 
 ```bash
 npm install

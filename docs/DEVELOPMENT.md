@@ -155,6 +155,7 @@ npm run test:ui
 - Dialogs (the restore prompt, Clear Results' confirmation) are dismissed unless a test sets `openApp(t, { dialogs: 'accept' })` or `page.answerDialogs = 'accept'`. Every dialog's message is recorded in `page.dialogs`.
 - `openTab(page, url)` opens another tab in the same context, and `reload(page)` reloads, both sharing IndexedDB and `localStorage`, to test what survives closing the page. `storedSession(page)` reads the saved checkpoint without creating or upgrading the database.
 - The About page's README request is answered with this checkout's `README.md`, so the tests check the README being changed and do not depend on what is merged. Pass `openApp(t, { readme: handler })` with a Playwright route handler to simulate a failure. Because every in-page link must point at a heading, renaming a README heading without updating its links fails `about.test.js`.
+- Clipboard access is off by default. `openApp(t, { clipboard: 'grant' })` allows it, so a test can read what was copied with `navigator.clipboard.readText()`. `{ clipboard: 'fail' }` makes every write fail, to test the fallbacks; denying permission alone does not reliably make writes fail in headless Chromium.
 - The page loads its libraries from jsDelivr, so the tests need network access.
 
 | File | Covers |
@@ -164,13 +165,15 @@ npm run test:ui
 | `restore-session.test.js` | Restoring a finished or stopped run (settings, results, dataset and file name) and resuming it, declining the restore, Clear Results deleting the session, and share links not offering a restore |
 | `replay.test.js` | Stepping through improvements with the slider (formula, export and tree follow), Back to latest, playing to the end, pausing, and the replay hiding during a run |
 | `about.test.js` | The README rendering (logo and tables included), GitHub-style heading anchors, every in-page link pointing at a heading, links scrolling instead of changing the route, and the message when the README cannot be loaded |
+| `operator-presets.test.js` | A checkbox for each of the 23 operators, each preset ticking exactly its operators, the highlight following hand-made changes, the at-least-one-operator check, locking during a run, and a run using only the chosen operators |
+| `copy-buttons.test.js` | Copy putting exactly the selected export (all four formats) on the clipboard and its label resetting, Copy share link copying the link it shows, and both buttons' fallbacks when the clipboard fails |
 | `theme.test.js` | Auto following the device (also when it switches), the Auto → Light → Dark cycle, the saved choice surviving a reload and overriding the device, the `<head>` script applying it before the app starts, and the toggle on the About page |
 
 Write tests that cannot pass by luck. Runs that must finish use data that linear scaling solves in a few generations. Runs that must not finish use Target R² 1 with a target the operators cannot fit exactly, such as `sin(x)` with `+ - *`. To prove that a resumed run continues, `recordGenerations(page)` records every value the Generation counter shows. Use Slow speed when the generations in question would otherwise arrive in a single Fast batch.
 
 Prefer finding elements by role, label or visible text, as these tests do, over CSS classes, so styling changes do not break them. Note that an `aria-label` replaces a button's visible text as its name (the replay button is "Play replay", not "▶ Replay").
 
-Not covered yet: what the canvas charts draw, operator presets and the Copy buttons (headless Chromium has no clipboard permission by default). Check changes there in a browser.
+Not covered yet: what the canvas charts draw. Check changes there in a browser.
 
 ## Benchmark
 
