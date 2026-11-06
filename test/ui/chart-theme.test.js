@@ -41,11 +41,25 @@ function pixel(page, index, x, y) {
     [...cs[a.index].getContext('2d').getImageData(a.x, a.y, 1, 1).data], { index, x, y });
 }
 
+async function chartSize(page, index) {
+  return page.$$eval('canvas', (cs, i) => [cs[i].width, cs[i].height], index);
+}
+
 // Where the first data marker (x = -5, y = 27) of the default target
 // x*x + 2 is drawn on the fit chart, and the latest-best dot of a
 // one-generation run on the progress chart (as in app.js).
-const FIRST_MARKER = [20, 20];
-const LATEST_BEST_DOT = [84 + 1, 272];
+async function firstMarker(page) {
+  const points = s.generateFormulaSamples('x*x + 2', -5, 5, 101);
+  const [W, H] = await chartSize(page, 0);
+  const g = s.fitGeometry(s.valueRange(points.map(p => p.x)), s.valueRange(points.map(p => p.y)), W, H);
+  return [Math.round(g.toX(-5)), Math.round(g.toY(27))];
+}
+
+async function latestBestDot(page) {
+  const [W, H] = await chartSize(page, 1);
+  const g = s.progressGeometry(1, W, H);
+  return [Math.round(g.toX(1)) + 1, Math.round(g.toY(1))];
+}
 
 // WCAG contrast ratio between two colours
 function contrast(a, b) {
@@ -68,14 +82,14 @@ for (const scheme of ['dark', 'light']) {
     assert.deepEqual(await canvasBackground(page, 1), bg, 'progress chart background');
 
     // data points are drawn in the colour of the "data" key
-    const marker = await pixel(page, 0, ...FIRST_MARKER);
+    const marker = await pixel(page, 0, ...(await firstMarker(page)));
     assert.ok(distance(marker, keys.cyan) <= 3, `marker ${marker} vs key ${keys.cyan}`);
 
     await startButton(page).click();
     await waitForStatus(page, 'Target R² reached');
 
     // the best program's dot on the progress chart matches the "best" key
-    const best = await pixel(page, 1, ...LATEST_BEST_DOT);
+    const best = await pixel(page, 1, ...(await latestBestDot(page)));
     assert.ok(distance(best, keys.red) <= 3, `best ${best} vs key ${keys.red}`);
 
     // the target line's key matches the target token the line is drawn in
@@ -105,14 +119,14 @@ for (const scheme of ['dark', 'light']) {
 test('the theme toggle redraws the charts in the new colours', async (t) => {
   const page = await openApp(t, { colorScheme: 'dark' });
 
-  const darkMarker = await pixel(page, 0, ...FIRST_MARKER);
+  const darkMarker = await pixel(page, 0, ...(await firstMarker(page)));
   const darkBg = await canvasBackground(page, 0);
 
   await page.locator('button.theme-toggle').click(); // Auto -> Light
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light');
 
   const keys = await keyColors(page);
-  const lightMarker = await pixel(page, 0, ...FIRST_MARKER);
+  const lightMarker = await pixel(page, 0, ...(await firstMarker(page)));
 
   assert.ok(distance(lightMarker, keys.cyan) <= 3, `redrawn in the light key colour: ${lightMarker}`);
   assert.ok(distance(lightMarker, darkMarker) > 20, 'the colour changed');
@@ -124,7 +138,7 @@ test('in Auto, a device switch between light and dark redraws the charts', async
   await startButton(page).click();
   await waitForStatus(page, 'Target R² reached');
 
-  const lightBest = await pixel(page, 1, ...LATEST_BEST_DOT);
+  const lightBest = await pixel(page, 1, ...(await latestBestDot(page)));
 
   await page.emulateMedia({ colorScheme: 'dark' });
 
@@ -132,8 +146,8 @@ test('in Auto, a device switch between light and dark redraws the charts', async
   await page.waitForFunction(([x, y, want]) => {
     const d = document.querySelectorAll('canvas')[1].getContext('2d').getImageData(x, y, 1, 1).data;
     return Math.hypot(d[0] - want[0], d[1] - want[1], d[2] - want[2]) <= 3;
-  }, [...LATEST_BEST_DOT, keys.red]);
+  }, [...(await latestBestDot(page)), keys.red]);
 
-  const darkBest = await pixel(page, 1, ...LATEST_BEST_DOT);
+  const darkBest = await pixel(page, 1, ...(await latestBestDot(page)));
   assert.ok(distance(darkBest, lightBest) > 20, `${lightBest} -> ${darkBest}`);
 });

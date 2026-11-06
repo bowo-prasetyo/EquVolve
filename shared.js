@@ -932,99 +932,114 @@ function datasetFromTable(table, targetIndex = table.headers.length - 1) {
 // CONFIG
 // =========================================================
 
-// Validate a run configuration. Returns a list of human-readable
-// problems; an empty list means the config is usable.
-function validateConfig(config) {
+// Validate a run configuration. Returns every problem at once, each as
+// { field, message }, where `field` names the setting to fix: a config
+// key (populationSize, targetFormula, ...), 'xRange' for the X range,
+// 'operators', or 'dataset'. An empty list means the config is usable.
+function validateConfigFields(config) {
   const errors = [];
+  const add = (field, message) => errors.push({ field, message });
   const isInt = (v) => Number.isInteger(v);
   const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
   const inUnit = (v) => isNum(v) && v >= 0 && v <= 1;
 
   if (!isInt(config.populationSize) || config.populationSize < 2) {
-    errors.push('Population Size must be a whole number of at least 2.');
+    add('populationSize', 'Population Size must be a whole number of at least 2.');
   }
 
   if (!isInt(config.maxGenerations) || config.maxGenerations < 1) {
-    errors.push('Max Generations must be a whole number of at least 1.');
+    add('maxGenerations', 'Max Generations must be a whole number of at least 1.');
   }
 
   if (!isNum(config.targetR2) || config.targetR2 > 1) {
-    errors.push('Target R² must be a number no greater than 1.');
+    add('targetR2', 'Target R² must be a number no greater than 1.');
   }
 
   if (!inUnit(config.mutationRate)) {
-    errors.push('Mutation Rate must be between 0 and 1.');
+    add('mutationRate', 'Mutation Rate must be between 0 and 1.');
   }
 
   if (!inUnit(config.crossoverRate)) {
-    errors.push('Crossover Rate must be between 0 and 1.');
+    add('crossoverRate', 'Crossover Rate must be between 0 and 1.');
   }
 
   if (!inUnit(config.elitismRate)) {
-    errors.push('Elitism Rate must be between 0 and 1.');
+    add('elitismRate', 'Elitism Rate must be between 0 and 1.');
   }
 
   if (!isInt(config.tournamentSize) || config.tournamentSize < 1) {
-    errors.push('Tournament Size must be a whole number of at least 1.');
+    add('tournamentSize', 'Tournament Size must be a whole number of at least 1.');
   }
 
-  if (!isInt(config.treeDepth) || config.treeDepth < 1 || config.treeDepth > 12) {
-    errors.push('Initial Tree Depth must be a whole number between 1 and 12.');
+  const treeDepthOk = isInt(config.treeDepth) && config.treeDepth >= 1 && config.treeDepth <= 12;
+
+  if (!treeDepthOk) {
+    add('treeDepth', 'Initial Tree Depth must be a whole number between 1 and 12.');
   }
 
   if (
     config.maxTreeDepth !== undefined &&
     (!isInt(config.maxTreeDepth) ||
-      config.maxTreeDepth < config.treeDepth ||
+      (treeDepthOk && config.maxTreeDepth < config.treeDepth) ||
+      config.maxTreeDepth < 1 ||
       config.maxTreeDepth > MAX_TREE_DEPTH_LIMIT)
   ) {
-    errors.push(`Max Tree Depth must be a whole number between Initial Tree Depth and ${MAX_TREE_DEPTH_LIMIT}.`);
+    add('maxTreeDepth', `Max Tree Depth must be a whole number between Initial Tree Depth and ${MAX_TREE_DEPTH_LIMIT}.`);
   }
 
   if (!Array.isArray(config.operators) || config.operators.length === 0) {
-    errors.push('Select at least one operator.');
+    add('operators', 'Select at least one operator.');
   }
 
   let points = [];
+  let dataField = 'dataset';
 
   if (config.dataMode === 'dataset') {
     points = config.dataset || [];
     const variables = config.variables || ['x'];
 
     if (points.length < 2) {
-      errors.push('Upload a CSV dataset with at least 2 valid rows.');
+      add('dataset', 'Upload a CSV dataset with at least 2 valid rows.');
     }
 
     if (
       !Array.isArray(variables) || variables.length < 1 ||
       variables.length > MAX_VARIABLES || !variables.every(v => IDENTIFIER.test(v))
     ) {
-      errors.push(`The dataset needs between 1 and ${MAX_VARIABLES} input columns.`);
+      add('dataset', `The dataset needs between 1 and ${MAX_VARIABLES} input columns.`);
     } else if (variables.length > 1 && !points.every(p => p.v && variables.every(n => Number.isFinite(p.v[n])))) {
-      errors.push('Every dataset row needs a numeric value for each input column.');
+      add('dataset', 'Every dataset row needs a numeric value for each input column.');
     }
   } else {
-    if (!isNum(config.minX) || !isNum(config.maxX) || config.minX >= config.maxX) {
-      errors.push('X Range minimum must be smaller than the maximum.');
+    dataField = 'targetFormula';
+    const rangeOk = isNum(config.minX) && isNum(config.maxX) && config.minX < config.maxX;
+    const countOk = isInt(config.sampleCount) && config.sampleCount >= 2 && config.sampleCount <= 10000;
+
+    if (!rangeOk) {
+      add('xRange', 'X Range minimum must be smaller than the maximum.');
     }
 
-    if (!isInt(config.sampleCount) || config.sampleCount < 2 || config.sampleCount > 10000) {
-      errors.push('Sample Points must be a whole number between 2 and 10000.');
+    if (!countOk) {
+      add('sampleCount', 'Sample Points must be a whole number between 2 and 10000.');
     }
 
-    if (errors.length === 0) {
-      try {
+    // The formula is checked on its own; only its sampling needs a
+    // usable range and point count.
+    try {
+      if (rangeOk && countOk) {
         points = generateFormulaSamples(
           config.targetFormula, config.minX, config.maxX, config.sampleCount
         );
 
         if (points.length < 2) {
-          errors.push('Formula produces fewer than 2 finite values in the X Range.');
+          add('targetFormula', 'Formula produces fewer than 2 finite values in the X Range.');
         }
-      } catch (e) {
-        errors.push(`Formula is invalid: ${e.message}`);
-        points = [];
+      } else {
+        compileFormula(config.targetFormula);
       }
+    } catch (e) {
+      add('targetFormula', `Formula is invalid: ${e.message}`);
+      points = [];
     }
   }
 
@@ -1032,11 +1047,84 @@ function validateConfig(config) {
     const y0 = points[0].y;
 
     if (points.every(p => p.y === y0)) {
-      errors.push('Target values are constant; R² is undefined for a constant target.');
+      add(dataField, 'Target values are constant; R² is undefined for a constant target.');
     }
   }
 
   return errors;
+}
+
+// The problems of validateConfigFields, as messages only.
+function validateConfig(config) {
+  return validateConfigFields(config).map(e => e.message);
+}
+
+// Which of the evolvable operators (OP_ARITY) a target formula uses, so
+// the page can point out operators that are not ticked. `unsupported`
+// lists Math functions the formula calls that are not operators at all
+// (such as abs), which a run can only approximate. A formula that does
+// not parse gives empty lists; validation reports it.
+//   formulaOperators('x*x + 2/x') -> { ops: ['*', '+', '/'], unsupported: [] }
+// A leading minus (-x) needs no '-' operator: linear scaling and the
+// constants can flip a sign.
+function formulaOperators(formula) {
+  const source = String(formula == null ? '' : formula);
+  const tokens = [];
+
+  try {
+    checkFormulaSyntax(source);
+  } catch (e) {
+    return { ops: [], unsupported: [] };
+  }
+
+  FORMULA_TOKEN.lastIndex = 0;
+
+  while (FORMULA_TOKEN.lastIndex < source.length) {
+    const token = FORMULA_TOKEN.exec(source)[0];
+    if (!/^\s+$/.test(token)) tokens.push(token);
+  }
+
+  const ops = [];
+  const unsupported = [];
+  const addTo = (list, item) => { if (!list.includes(item)) list.push(item); };
+  const isOperand = (t) => t === ')' || /^[\w.$]/.test(t);
+
+  // A small whole power (x**2, pow(x, 3)) is only repeated
+  // multiplication, so it needs '*' rather than 'pow'.
+  const smallPower = (t) => /^\d+$/.test(t || '') && Number(t) >= 2 && Number(t) <= 10;
+
+  const powExponent = (open) => {
+    let depth = 0;
+
+    for (let j = open; j < tokens.length; j++) {
+      if (tokens[j] === '(') depth++;
+      else if (tokens[j] === ')') depth--;
+      else if (tokens[j] === ',' && depth === 1) {
+        return tokens[j + 2] === ')' ? tokens[j + 1] : null;
+      }
+    }
+
+    return null;
+  };
+
+  tokens.forEach((token, i) => {
+    const prev = tokens[i - 1];
+
+    if (token === '**') {
+      addTo(ops, smallPower(tokens[i + 1]) ? '*' : 'pow');
+    } else if (token === '+' || token === '-') {
+      if (prev !== undefined && isOperand(prev)) addTo(ops, token);
+    } else if (token === '*' || token === '/') {
+      addTo(ops, token);
+    } else if (/^[A-Za-z_$]/.test(token) && tokens[i + 1] === '(') {
+      const name = token.startsWith('Math.') ? token.slice(5) : token;
+
+      if (name === 'pow' && smallPower(powExponent(i + 1))) addTo(ops, '*');
+      else addTo(name in OP_ARITY ? ops : unsupported, name);
+    }
+  });
+
+  return { ops, unsupported };
 }
 
 // Fill in settings added after a session was saved, and convert the
@@ -1354,6 +1442,102 @@ function progressGrid(minLog = PROGRESS_MIN_LOG) {
   return lines;
 }
 
+// ---------- chart layout ----------
+// The charts are drawn in CSS pixels at the size the page gives them
+// (sharp on high-density screens), so their layout is computed here
+// from the canvas size. The page and the browser tests share it.
+
+const CHART_FONT = '12px sans-serif';
+
+// The size (CSS px) a chart is drawn at for the width it has: half as
+// tall as wide, but never so short that phones get an unreadable sliver.
+function chartSize(width) {
+  const w = Math.max(160, Math.round(Number(width) || 600));
+  return { width: w, height: Math.round(Math.min(340, Math.max(240, w / 2))) };
+}
+
+// Round axis ticks covering [min, max]: steps of 1, 2 or 5 times a power
+// of ten, at most about `maxCount` of them.
+function niceTicks(min, max, maxCount = 6) {
+  if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return [];
+
+  const rough = (max - min) / Math.max(1, maxCount);
+  const power = Math.pow(10, Math.floor(Math.log10(rough)));
+  const step = [1, 2, 5, 10].map(m => m * power).find(s => s >= rough);
+  const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+  const ticks = [];
+
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) {
+    ticks.push(Number(v.toFixed(decimals)) || 0);
+  }
+
+  return ticks;
+}
+
+// A tick label: short, with no floating-point noise.
+function formatTick(value) {
+  const a = Math.abs(value);
+  if (a !== 0 && (a >= 1e5 || a < 1e-3)) return value.toExponential(1).replace('e+', 'e');
+  return String(Number(value.toPrecision(6)));
+}
+
+// [min, max] widened by `fraction` of its span on both sides, so points
+// at the extremes are not drawn on the frame.
+function paddedRange({ min, max }, fraction = 0.04) {
+  const pad = (max - min) * fraction;
+  return { min: min - pad, max: max + pad };
+}
+
+// The fit chart (one input): data and best program over x.
+function fitGeometry(xRange, yRange, width, height) {
+  const plot = { left: 62, top: 12, right: width - 14, bottom: height - 42 };
+  const xr = paddedRange(xRange);
+  const yr = paddedRange(yRange);
+
+  return {
+    plot,
+    xRange: xr,
+    yRange: yr,
+    toX: linearScale(xr.min, xr.max, plot.left, plot.right),
+    toY: linearScale(yr.min, yr.max, plot.bottom, plot.top),
+    xTicks: niceTicks(xr.min, xr.max, Math.max(3, Math.floor((plot.right - plot.left) / 70))),
+    yTicks: niceTicks(yr.min, yr.max, Math.max(3, Math.floor((plot.bottom - plot.top) / 40)))
+  };
+}
+
+// The predicted-against-actual chart (several inputs): a square plot
+// with the same scale on both axes, centred in the width.
+function predictedGeometry(range, width, height) {
+  const margin = { left: 62, top: 12, right: 14, bottom: 42 };
+  const size = Math.max(10, Math.min(width - margin.left - margin.right, height - margin.top - margin.bottom));
+  const left = margin.left + Math.max(0, (width - margin.left - margin.right - size) / 2);
+  const plot = { left, top: margin.top, right: left + size, bottom: margin.top + size };
+  const r = paddedRange(range);
+  const ticks = niceTicks(r.min, r.max, Math.max(3, Math.floor(size / 50)));
+
+  return {
+    plot,
+    range: r,
+    toX: linearScale(r.min, r.max, plot.left, plot.right),
+    toY: linearScale(r.min, r.max, plot.bottom, plot.top),
+    ticks
+  };
+}
+
+// The progress chart: generations across, log-scaled 1 - R² down.
+function progressGeometry(maxGeneration, width, height) {
+  const plot = { left: 84, top: 12, right: width - 12, bottom: height - 30 };
+  const maxG = Math.max(maxGeneration, 2);
+  const level = linearScale(0, PROGRESS_MIN_LOG, plot.top, plot.bottom);
+
+  return {
+    plot,
+    maxG,
+    toX: linearScale(1, maxG, plot.left, plot.right),
+    toY: (r2) => level(progressLevel(r2))
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     CHART_COLOR_TOKENS,
@@ -1365,6 +1549,14 @@ if (typeof module !== 'undefined' && module.exports) {
     sampleIndices,
     progressLevel,
     progressGrid,
+    CHART_FONT,
+    chartSize,
+    niceTicks,
+    formatTick,
+    paddedRange,
+    fitGeometry,
+    predictedGeometry,
+    progressGeometry,
     OP_ARITY,
     DEFAULT_SAMPLE_COUNT,
     MAX_TREE_DEPTH_LIMIT,
@@ -1391,6 +1583,8 @@ if (typeof module !== 'undefined' && module.exports) {
     parseCsv,
     datasetFromTable,
     validateConfig,
+    validateConfigFields,
+    formulaOperators,
     normalizeConfig,
     encodeShare,
     decodeShare,

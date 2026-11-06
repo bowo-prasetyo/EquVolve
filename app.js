@@ -17,17 +17,49 @@ const OPERATOR_PRESETS = [
   { name: 'Everything', ops: Object.keys(OP_ARITY) }
 ];
 
+// The settings most runs need are shown; the rest sit under Advanced.
 const SETTING_FIELDS = [
-  { key: 'populationSize', label: 'Population Size', step: 1, hint: 'How many programs are tried at once. More can find harder formulas, but each generation is slower.' },
   { key: 'maxGenerations', label: 'Max Generations', step: 1, hint: 'The run pauses after this many generations; raise it and press Resume to go on.' },
   { key: 'targetR2', label: 'Target R²', step: 0.001, hint: 'The run stops as soon as the best program fits this well (1 = perfect fit).' },
-  { key: 'crossoverRate', label: 'Crossover Rate', step: 0.05, hint: 'How often (0–1) a new program combines parts of two good programs, instead of copying one.' },
-  { key: 'mutationRate', label: 'Mutation Rate', step: 0.05, hint: 'How often (0–1) a new program then gets a small random change.' },
-  { key: 'elitismRate', label: 'Elitism Rate', step: 0.01, hint: 'The share (0–1) of the best programs kept unchanged for the next generation.' },
-  { key: 'tournamentSize', label: 'Tournament Size', step: 1, hint: 'Parents are chosen by letting this many random programs compete; larger favours the best more strongly.' },
-  { key: 'treeDepth', label: 'Initial Tree Depth', step: 1, hint: 'How deeply nested the random programs at the start may be.' },
-  { key: 'maxTreeDepth', label: 'Max Tree Depth', step: 1, hint: `How deeply nested any program may become (up to ${MAX_TREE_DEPTH_LIMIT}); stops programs growing without fitting better.` }
+  { key: 'populationSize', label: 'Population Size', step: 1, advanced: true, hint: 'How many programs are tried at once. More can find harder formulas, but each generation is slower.' },
+  { key: 'crossoverRate', advanced: true, label: 'Crossover Rate', step: 0.05, hint: 'How often (0–1) a new program combines parts of two good programs, instead of copying one.' },
+  { key: 'mutationRate', advanced: true, label: 'Mutation Rate', step: 0.05, hint: 'How often (0–1) a new program then gets a small random change.' },
+  { key: 'elitismRate', advanced: true, label: 'Elitism Rate', step: 0.01, hint: 'The share (0–1) of the best programs kept unchanged for the next generation.' },
+  { key: 'tournamentSize', advanced: true, label: 'Tournament Size', step: 1, hint: 'Parents are chosen by letting this many random programs compete; larger favours the best more strongly.' },
+  { key: 'treeDepth', advanced: true, label: 'Initial Tree Depth', step: 1, hint: 'How deeply nested the random programs at the start may be.' },
+  { key: 'maxTreeDepth', advanced: true, label: 'Max Tree Depth', step: 1, hint: `How deeply nested any program may become (up to ${MAX_TREE_DEPTH_LIMIT}); stops programs growing without fitting better.` }
 ];
+
+// Settings under Advanced, for counting how many differ from the defaults.
+const ADVANCED_KEYS = [
+  ...SETTING_FIELDS.filter(f => f.advanced).map(f => f.key),
+  'linearScaling',
+  'constantOptimization'
+];
+
+// The control to focus for each validation field (see
+// validateConfigFields in shared.js); other fields are settings.
+const FIELD_TARGETS = {
+  targetFormula: '#formula',
+  xRange: '#min-x',
+  sampleCount: '#samples',
+  operators: '#operators input',
+  dataset: '#csv'
+};
+
+// Validation fields in the order they appear on the page, so problems
+// are listed, and the first one focused, top to bottom.
+const FIELD_ORDER = [
+  'targetFormula', 'xRange', 'sampleCount', 'dataset',
+  ...SETTING_FIELDS.filter(f => !f.advanced).map(f => f.key),
+  'operators',
+  ...SETTING_FIELDS.filter(f => f.advanced).map(f => f.key)
+];
+
+const fieldRank = (field) => {
+  const i = FIELD_ORDER.indexOf(field);
+  return i < 0 ? FIELD_ORDER.length : i;
+};
 
 const EXPORT_FORMATS = [
   { key: 'plain', label: 'Formula' },
@@ -109,19 +141,31 @@ const Home = {
       <template v-if="dataMode === 'formula'">
         <div class="field-row">
           <label class="field-label" for="formula">Formula</label>
-          <input id="formula" class="wide" v-model="targetFormula" placeholder="x*x + 2" :disabled="isRunning">
+          <input
+            id="formula"
+            class="wide"
+            v-model="targetFormula"
+            placeholder="x*x + 2"
+            :disabled="isRunning"
+            v-bind="invalidAttrs('targetFormula')"
+          >
+          <span v-if="fieldErrors.targetFormula" id="error-targetFormula" class="field-error">{{ fieldErrors.targetFormula }}</span>
         </div>
 
         <div class="field-row">
-          <span class="field-label">X range</span>
-          <input type="number" v-model.number="minX" :disabled="isRunning" aria-label="Minimum x">
-          <span>to</span>
-          <input type="number" v-model.number="maxX" :disabled="isRunning" aria-label="Maximum x">
+          <span class="field-label" id="x-range-label">X range</span>
+          <span class="range-inputs">
+            <input id="min-x" type="number" v-model.number="minX" :disabled="isRunning" aria-label="Minimum x" v-bind="invalidAttrs('xRange')">
+            <span>to</span>
+            <input id="max-x" type="number" v-model.number="maxX" :disabled="isRunning" aria-label="Maximum x" v-bind="invalidAttrs('xRange')">
+          </span>
+          <span v-if="fieldErrors.xRange" id="error-xRange" class="field-error">{{ fieldErrors.xRange }}</span>
         </div>
 
         <div class="field-row">
           <label class="field-label" for="samples">Sample points</label>
-          <input id="samples" type="number" min="2" step="1" v-model.number="sampleCount" :disabled="isRunning">
+          <input id="samples" type="number" min="2" step="1" v-model.number="sampleCount" :disabled="isRunning" v-bind="invalidAttrs('sampleCount')">
+          <span v-if="fieldErrors.sampleCount" id="error-sampleCount" class="field-error">{{ fieldErrors.sampleCount }}</span>
           <span class="hint">evenly spaced across the X range; these are the points the run fits</span>
         </div>
 
@@ -134,7 +178,8 @@ const Home = {
       <template v-else>
         <div class="field-row">
           <label class="field-label" for="csv">CSV file</label>
-          <input id="csv" type="file" accept=".csv,text/csv" @change="handleFileUpload" :disabled="isRunning">
+          <input id="csv" type="file" accept=".csv,text/csv" @change="handleFileUpload" :disabled="isRunning" v-bind="invalidAttrs('dataset')">
+          <span v-if="fieldErrors.dataset" id="error-dataset" class="field-error">{{ fieldErrors.dataset }}</span>
         </div>
 
         <p class="hint">
@@ -161,13 +206,94 @@ const Home = {
 
     <!-- ===================== 2. SETTINGS ===================== -->
     <section class="panel">
-      <details open>
-        <summary><h2>2. Settings</h2></summary>
+      <h2>2. Settings</h2>
+
+      <div class="settings-grid">
+        <label v-for="f in basicFields" :key="f.key" class="setting">
+          <span class="field-label">{{ f.label }}</span>
+          <input
+            :id="'setting-' + f.key"
+            type="number"
+            :step="f.step"
+            v-model.number="$data[f.key]"
+            :disabled="isRunning"
+            v-bind="invalidAttrs(f.key)"
+          >
+          <span v-if="fieldErrors[f.key]" :id="'error-' + f.key" class="field-error">{{ fieldErrors[f.key] }}</span>
+          <span class="hint">{{ f.hint }}</span>
+        </label>
+
+        <label class="setting">
+          <span class="field-label">Speed</span>
+          <select v-model="speed" :disabled="isRunning">
+            <option value="fast">Fast</option>
+            <option value="slow">Slow: one generation at a time</option>
+          </select>
+          <span class="hint">
+            Fast runs many generations between screen updates. Slow is for watching each step.
+          </span>
+        </label>
+      </div>
+
+      <h3 id="operators-heading">Operators</h3>
+
+      <p class="hint">
+        The building blocks programs may use. Pick what matches your data: Trigonometric for waves,
+        Exp / Log for growth, decay or bell curves, Rational for division. A few fitting operators usually beat Everything.
+      </p>
+
+      <div class="preset-row">
+        <span class="hint">Presets:</span>
+        <button
+          v-for="p in operatorPresets"
+          :key="p.name"
+          class="small"
+          :class="{ active: isPreset(p) }"
+          @click="enabledOperators = [...p.ops]"
+          :disabled="isRunning"
+        >{{ p.name }}</button>
+      </div>
+
+      <div
+        id="operators"
+        class="operator-groups"
+        :class="{ invalid: fieldErrors.operators }"
+        role="group"
+        aria-labelledby="operators-heading"
+        v-bind="invalidAttrs('operators')"
+      >
+        <fieldset v-for="g in operatorGroups" :key="g.name">
+          <legend>{{ g.name }}</legend>
+          <label v-for="op in g.ops" :key="op" class="inline operator">
+            <input type="checkbox" :value="op" v-model="enabledOperators" :disabled="isRunning">
+            {{ op }}
+          </label>
+        </fieldset>
+      </div>
+      <p v-if="fieldErrors.operators" id="error-operators" class="field-error">{{ fieldErrors.operators }}</p>
+
+      <details class="advanced" :open="advancedOpen" @toggle="advancedOpen = $event.target.open">
+        <summary>
+          <h3>Advanced settings</h3>
+          <span class="hint">
+            population, rates, tree depth, scaling<template v-if="advancedChanged"> · {{ advancedChanged }} changed from the defaults</template>
+          </span>
+        </summary>
+
+        <p class="hint">The defaults work well for most data. These are for exploring how genetic programming behaves.</p>
 
         <div class="settings-grid">
-          <label v-for="f in settingFields" :key="f.key" class="setting" :title="f.hint">
+          <label v-for="f in advancedFields" :key="f.key" class="setting">
             <span class="field-label">{{ f.label }}</span>
-            <input type="number" :step="f.step" v-model.number="$data[f.key]" :disabled="isRunning">
+            <input
+              :id="'setting-' + f.key"
+              type="number"
+              :step="f.step"
+              v-model.number="$data[f.key]"
+              :disabled="isRunning"
+              v-bind="invalidAttrs(f.key)"
+            >
+            <span v-if="fieldErrors[f.key]" :id="'error-' + f.key" class="field-error">{{ fieldErrors[f.key] }}</span>
             <span class="hint">{{ f.hint }}</span>
           </label>
 
@@ -191,71 +317,73 @@ const Home = {
               Experimental and off by default: in our benchmark it did not improve results.
             </span>
           </label>
-
-          <label class="setting">
-            <span class="field-label">Speed</span>
-            <select v-model="speed" :disabled="isRunning">
-              <option value="fast">Fast</option>
-              <option value="slow">Slow: one generation at a time</option>
-            </select>
-            <span class="hint">
-              Fast runs many generations between screen updates. Slow is for watching each step.
-            </span>
-          </label>
-        </div>
-
-        <h3>Operators</h3>
-
-        <p class="hint">
-          The building blocks programs may use. Pick what matches your data: Trigonometric for waves,
-          Exp / Log for growth, decay or bell curves, Rational for division. A few fitting operators usually beat Everything.
-        </p>
-
-        <div class="preset-row">
-          <span class="hint">Presets:</span>
-          <button
-            v-for="p in operatorPresets"
-            :key="p.name"
-            class="small"
-            :class="{ active: isPreset(p) }"
-            @click="enabledOperators = [...p.ops]"
-            :disabled="isRunning"
-          >{{ p.name }}</button>
-        </div>
-
-        <div class="operator-groups">
-          <fieldset v-for="g in operatorGroups" :key="g.name">
-            <legend>{{ g.name }}</legend>
-            <label v-for="op in g.ops" :key="op" class="inline">
-              <input type="checkbox" :value="op" v-model="enabledOperators" :disabled="isRunning">
-              {{ op }}
-            </label>
-          </fieldset>
         </div>
       </details>
     </section>
 
-    <!-- ===================== CONTROLS ===================== -->
-    <div v-if="errorMessages.length" class="code error" role="alert">
-      <div v-for="(msg, i) in errorMessages" :key="i">{{ msg }}</div>
-    </div>
+    <!-- ===================== RUN BAR =====================
+         Sticks to the bottom of the window until its place above the
+         results scrolls into view, so the run buttons are always at hand. -->
+    <div class="run-bar">
+      <div v-if="validationErrors.length || errorMessages.length" class="run-message error" role="alert">
+        <p v-if="validationErrors.length" class="run-message-title">
+          {{ validationErrors.length === 1 ? 'Fix this to continue:' : 'Fix these ' + validationErrors.length + ' problems to continue:' }}
+        </p>
+        <ul>
+          <li v-for="(e, i) in validationErrors" :key="'v' + i">
+            <a :href="'#' + e.field" @click.prevent="focusField(e.field)">{{ e.message }}</a>
+          </li>
+          <li v-for="(msg, i) in errorMessages" :key="'m' + i">{{ msg }}</li>
+        </ul>
+      </div>
 
-    <div v-if="statusMessage" class="code status" role="status">
-      {{ statusMessage }}
-    </div>
+      <div v-if="missingOperators.length && !isRunning" class="run-message note">
+        <span>
+          Your formula uses <template v-for="(op, i) in missingOperators" :key="op"><code>{{ op }}</code>{{ i < missingOperators.length - 1 ? ', ' : '' }}</template>,
+          which {{ missingOperators.length === 1 ? 'is' : 'are' }} not ticked under Operators, so a run can only approximate it.
+        </span>
+        <button class="small" @click="addOperators(missingOperators)">Tick {{ missingOperators.join(' ') }}</button>
+      </div>
 
-    <div class="controls">
-      <button class="primary" @click="mainAction" :disabled="isRunning">
-        {{ mainButtonText }}
-      </button>
+      <div v-if="formulaUse.unsupported.length && !isRunning" class="run-message note">
+        <span>
+          <template v-for="(name, i) in formulaUse.unsupported" :key="name"><code>{{ name }}</code>{{ i < formulaUse.unsupported.length - 1 ? ', ' : '' }}</template>
+          {{ formulaUse.unsupported.length === 1 ? 'is' : 'are' }} not available as an operator, so a run can only approximate it.
+        </span>
+      </div>
 
-      <button v-if="!isIdle" @click="secondaryAction">
-        {{ secondaryButtonText }}
-      </button>
+      <div v-if="statusMessage" class="run-message status" role="status">
+        <span>{{ statusMessage }}</span>
+        <button v-if="undo" class="small" @click="undoLast">{{ undo.label }}</button>
+      </div>
 
-      <button v-if="best && !isRunning" @click="shareRun">
-        Copy share link
-      </button>
+      <div class="controls">
+        <template v-if="isRunning">
+          <button class="primary" disabled>Running…</button>
+          <button @click="stopEvolution">Stop</button>
+        </template>
+
+        <template v-else-if="isPaused">
+          <template v-if="resumeBlocker">
+            <button class="primary" @click="newRun">New run</button>
+            <button @click="resumeEvolution">Resume</button>
+          </template>
+          <template v-else>
+            <button class="primary" @click="resumeEvolution">Resume</button>
+            <button @click="newRun">New run</button>
+          </template>
+        </template>
+
+        <button v-else class="primary" @click="startEvolution">Start Evolution</button>
+
+        <button v-if="best && !isRunning" @click="shareRun">
+          Copy share link
+        </button>
+
+        <button v-if="isPaused" class="quiet" @click="clearResults">Clear Results</button>
+      </div>
+
+      <p v-if="resumeHint" class="hint resume-hint">{{ resumeHint }}</p>
     </div>
 
     <div v-if="shareUrl" class="field-row">
@@ -419,7 +547,10 @@ const Home = {
       // ui
       evolutionState: 'idle', // idle | running | paused
       statusMessage: '',
-      errorMessages: [],
+      errorMessages: [], // problems not tied to a setting (CSV, share link)
+      showValidation: false, // after a failed Start/Resume, re-check as the user edits
+      advancedOpen: false,
+      undo: null, // { label, state }: the run that Clear Results or New run replaced
       exportFormat: 'plain',
       copyLabel: 'Copy',
       shareUrl: '',
@@ -431,7 +562,8 @@ const Home = {
       lastCheckpointFitness: Infinity,
       lastSavedBestFitness: Infinity,
 
-      settingFields: SETTING_FIELDS,
+      basicFields: SETTING_FIELDS.filter(f => !f.advanced),
+      advancedFields: SETTING_FIELDS.filter(f => f.advanced),
       operatorGroups: OPERATOR_GROUPS,
       operatorPresets: OPERATOR_PRESETS,
       exportFormats: EXPORT_FORMATS
@@ -507,16 +639,72 @@ const Home = {
       return this.evolutionState === 'idle';
     },
 
-    mainButtonText() {
-      switch (this.evolutionState) {
-        case 'paused': return 'Clear Results';
-        case 'running': return 'Running…';
-        default: return 'Start Evolution';
-      }
+    // How many Advanced settings differ from the defaults, so changes
+    // hidden in the collapsed section are not forgotten.
+    advancedChanged() {
+      return ADVANCED_KEYS.filter(key => this[key] !== DEFAULTS[key]).length;
     },
 
-    secondaryButtonText() {
-      return this.evolutionState === 'paused' ? 'Resume' : 'Stop';
+    // Every problem with the settings, as { field, message }. Shown once
+    // Start or Resume has found a problem, then kept up to date as the
+    // settings are edited, so each message goes away when it is fixed.
+    validationErrors() {
+      if (!this.showValidation) return [];
+
+      return validateConfigFields(this.buildConfig(false))
+        .sort((a, b) => fieldRank(a.field) - fieldRank(b.field));
+    },
+
+    // The first problem for each field.
+    fieldErrors() {
+      const errors = {};
+      for (const e of this.validationErrors) errors[e.field] ??= e.message;
+      return errors;
+    },
+
+    // The operators the target formula uses (formula mode only).
+    formulaUse() {
+      return this.dataMode === 'formula' ?
+        formulaOperators(this.targetFormula) :
+        { ops: [], unsupported: [] };
+    },
+
+    // Operators the formula uses that are not ticked: without them a run
+    // can only approximate the formula.
+    missingOperators() {
+      return this.formulaUse.ops.filter(op => !this.enabledOperators.includes(op));
+    },
+
+    // Why Resume would stop again at once, or null if it can go on.
+    resumeBlocker() {
+      if (!this.isPaused || !this.best) return null;
+
+      if (Number.isFinite(this.bestR2) && this.bestR2 >= 1) {
+        return 'perfect';
+      }
+
+      if (Number.isFinite(this.bestR2) && Number.isFinite(this.targetR2) && this.bestR2 >= this.targetR2) {
+        return 'targetR2';
+      }
+
+      if (Number.isInteger(this.maxGenerations) && this.generation >= this.maxGenerations) {
+        return 'maxGenerations';
+      }
+
+      return null;
+    },
+
+    resumeHint() {
+      switch (this.resumeBlocker) {
+        case 'perfect':
+          return 'The best program fits the data perfectly, so there is nothing left to improve. Press New run to search again from scratch.';
+        case 'targetR2':
+          return `The best program already reaches Target R² ${this.targetR2}. To keep improving it, raise Target R² and press Resume; or press New run to search again from scratch.`;
+        case 'maxGenerations':
+          return `The run is at Max Generations (${this.maxGenerations}). To continue it, raise Max Generations and press Resume; or press New run to search again from scratch.`;
+        default:
+          return '';
+      }
     }
   },
 
@@ -543,6 +731,10 @@ const Home = {
     // Kept off the reactive data on purpose: it is replaced every
     // generation and is only needed for checkpoints.
     this.latestPopulation = [];
+
+    // The settings the current run was started or last resumed with,
+    // which may differ from the form once it is paused and edited.
+    this.runConfig = null;
   },
 
   mounted() {
@@ -564,6 +756,23 @@ const Home = {
     };
     window.addEventListener(THEME_CHANGE_EVENT, this.redrawCharts);
 
+    // and at their new size when the window (or zoom) changes their width;
+    // redrawn on the next frame, as resizing a canvas inside the
+    // observer's callback would trigger it again in the same frame
+    this.chartWidths = new Map();
+    this.resizeObserver = new ResizeObserver((entries) => {
+      const changed = entries.some((e) => {
+        const width = Math.round(e.contentRect.width);
+        const before = this.chartWidths.get(e.target);
+        this.chartWidths.set(e.target, width);
+        return before !== undefined && before !== width;
+      });
+
+      if (changed) requestAnimationFrame(this.redrawCharts);
+    });
+    this.resizeObserver.observe(this.$refs.canvas);
+    this.resizeObserver.observe(this.$refs.progress);
+
     window.addEventListener('beforeunload', () => {
       if (this.evolutionState === 'running') {
         this.saveCheckpoint(true);
@@ -574,6 +783,7 @@ const Home = {
   beforeUnmount() {
     this.pauseReplay();
     window.removeEventListener(THEME_CHANGE_EVENT, this.redrawCharts);
+    this.resizeObserver?.disconnect();
 
     if (this.worker) {
       this.worker.terminate();
@@ -658,7 +868,15 @@ const Home = {
       this.lastCheckpointFitness = Math.min(this.lastCheckpointFitness, this.bestFitness);
       this.lastCheckpointGeneration = this.generation;
 
-      const state = {
+      this.db
+        .transaction(['sessions'], 'readwrite')
+        .objectStore('sessions')
+        .put(this.checkpointState());
+    },
+
+    // The current run as a stored checkpoint (see restoreSession).
+    checkpointState() {
+      return {
         id: 'latest',
         timestamp: Date.now(),
         generation: this.generation,
@@ -671,15 +889,10 @@ const Home = {
         series: this.series.map(p => [p.g, p.best, p.median]),
         timeline: this.timeline.map(t => [t.g, t.r2, t.fitness, compressTree(t.model)]),
         config: {
-          ...this.buildConfig(),
+          ...(this.runConfig || this.buildConfig()),
           uploadedFileName: this.uploadedFileName
         }
       };
-
-      this.db
-        .transaction(['sessions'], 'readwrite')
-        .objectStore('sessions')
-        .put(state);
     },
 
     checkRestorableSession() {
@@ -741,6 +954,7 @@ const Home = {
         .map(decompressTree)
         .filter(Boolean);
 
+      this.runConfig = config;
       this.lastCheckpointFitness = this.bestFitness ?? Infinity;
       this.lastCheckpointGeneration = this.generation;
       this.lastSavedBestFitness = this.bestFitness ?? Infinity;
@@ -765,7 +979,9 @@ const Home = {
     // RUN CONTROL
     // =========================
 
-    buildConfig() {
+    // copyData: false skips the deep copy of the dataset, for checks
+    // that only read it.
+    buildConfig(copyData = true) {
       return {
         targetFormula: this.targetFormula,
         minX: this.minX,
@@ -787,19 +1003,80 @@ const Home = {
         dataMode: this.dataMode,
         variables: [...this.activeVariables],
         targetName: this.targetName,
-        dataset: JSON.parse(JSON.stringify(this.uploadedData))
+        dataset: copyData ? JSON.parse(JSON.stringify(this.uploadedData)) : this.uploadedData
       };
     },
 
-    // Returns the config if valid, otherwise shows the problems and
+    // Returns the config if valid. Otherwise shows every problem, next to
+    // its field and in the run bar, moves focus to the first one, and
     // returns null.
     validatedConfig() {
       const config = this.buildConfig();
-      const errors = validateConfig(config);
+      const errors = validateConfigFields(config);
 
-      this.errorMessages = errors;
+      this.errorMessages = [];
+      this.showValidation = errors.length > 0;
 
-      return errors.length ? null : config;
+      if (errors.length) {
+        // show problems in the collapsed Advanced settings too
+        if (errors.some(e => this.isAdvanced(e.field))) {
+          this.advancedOpen = true;
+        }
+
+        this.focusField(this.validationErrors[0].field);
+        return null;
+      }
+
+      return config;
+    },
+
+    // aria attributes for a control whose field has a problem.
+    invalidAttrs(field) {
+      return this.fieldErrors[field] ?
+        { 'aria-invalid': 'true', 'aria-describedby': 'error-' + field } :
+        { 'aria-invalid': null, 'aria-describedby': null };
+    },
+
+    fieldElement(field) {
+      return this.$el.querySelector(FIELD_TARGETS[field] || '#setting-' + field);
+    },
+
+    isAdvanced(field) {
+      return this.advancedFields.some(f => f.key === field);
+    },
+
+    // Bring a field into view and focus it, opening Advanced settings
+    // if it is in there.
+    async focusField(field) {
+      if (!field) return;
+
+      if (this.isAdvanced(field)) {
+        this.advancedOpen = true;
+      }
+
+      await this.$nextTick();
+
+      const el = this.fieldElement(field);
+
+      if (el) {
+        el.focus({ preventScroll: true });
+        this.scrollAboveRunBar(el.closest('.setting, .field-row, .operator-groups') || el);
+      }
+    },
+
+    // Scroll so `el` (a field with its message) is centred in the part of
+    // the window the sticky run bar does not cover.
+    scrollAboveRunBar(el) {
+      const bar = this.$el.querySelector('.run-bar');
+      const visibleBottom = bar ? Math.min(window.innerHeight, bar.getBoundingClientRect().top) : window.innerHeight;
+      const rect = el.getBoundingClientRect();
+      const offset = rect.height > visibleBottom ? rect.top - 8 : rect.top + rect.height / 2 - visibleBottom / 2;
+
+      window.scrollBy(0, offset);
+    },
+
+    addOperators(ops) {
+      this.enabledOperators = [...this.enabledOperators, ...ops.filter(op => !this.enabledOperators.includes(op))];
     },
 
     resetResults() {
@@ -822,13 +1099,18 @@ const Home = {
     },
 
     startEvolution() {
-
       const config = this.validatedConfig();
 
       if (!config) {
         return;
       }
 
+      this.undo = null;
+      this.launch(config);
+    },
+
+    // Start a fresh run of `config`, replacing any results on screen.
+    launch(config) {
       if (this.worker) {
         this.worker.terminate();
       }
@@ -836,6 +1118,7 @@ const Home = {
       this.resetResults();
       this.evolutionState = 'running';
       this.statusMessage = '';
+      this.runConfig = config;
 
       this.worker = new Worker('worker.js');
       this.bindWorker();
@@ -871,6 +1154,15 @@ const Home = {
         return;
       }
 
+      // Resuming now would stop again at once: point at the setting to raise.
+      if (this.resumeBlocker) {
+        this.statusMessage = this.resumeHint;
+        if (this.resumeBlocker !== 'perfect') this.focusField(this.resumeBlocker);
+        return;
+      }
+
+      this.undo = null;
+      this.runConfig = config;
       this.stopReplay();
       this.evolutionState = 'running';
       this.statusMessage = '';
@@ -880,27 +1172,25 @@ const Home = {
       this.worker.postMessage({ type: 'resume', config });
     },
 
-    mainAction() {
-      if (this.evolutionState === 'idle') {
-        this.startEvolution();
-      } else if (this.evolutionState === 'paused') {
-        this.clearResults();
-      }
-    },
+    // From a paused run: start again from scratch with the current
+    // settings. The replaced run can be brought back with Undo.
+    newRun() {
+      const config = this.validatedConfig();
 
-    secondaryAction() {
-      if (this.evolutionState === 'running') {
-        this.stopEvolution();
-      } else if (this.evolutionState === 'paused') {
-        this.resumeEvolution();
-      }
-    },
-
-    clearResults() {
-
-      if (!confirm('Clear all evolution results?')) {
+      if (!config) {
         return;
       }
+
+      const previous = this.best ? this.checkpointState() : null;
+
+      this.launch(config);
+      this.offerUndo(previous, 'Started a new run.', 'Undo new run');
+    },
+
+    // Clear the results and the saved run straight away; Undo brings
+    // them back.
+    clearResults() {
+      const previous = this.best ? this.checkpointState() : null;
 
       if (this.worker) {
         this.worker.terminate();
@@ -908,8 +1198,10 @@ const Home = {
       }
 
       this.resetResults();
+      this.runConfig = null;
       this.statusMessage = '';
       this.errorMessages = [];
+      this.showValidation = false;
       this.evolutionState = 'idle';
 
       this.drawCanvas();
@@ -920,6 +1212,34 @@ const Home = {
         tx.objectStore('bestPrograms').clear();
         tx.objectStore('sessions').delete('latest');
       }
+
+      this.offerUndo(previous, 'Results cleared.', 'Undo');
+    },
+
+    offerUndo(state, message, label) {
+      // markRaw: kept as plain data, so it can be posted to the worker
+      this.undo = state ? { state: Vue.markRaw(state), label } : null;
+      this.statusMessage = message;
+    },
+
+    // Bring back the run that Clear Results or New run replaced, paused,
+    // and save it again as the run to restore.
+    undoLast() {
+      const { state } = this.undo;
+
+      this.undo = null;
+
+      if (this.worker) {
+        this.worker.terminate();
+        this.worker = null;
+      }
+
+      this.resetResults();
+      this.errorMessages = [];
+      this.showValidation = false;
+      this.restoreSession(state);
+      this.statusMessage = `Brought back the run at generation ${this.generation}.`;
+      this.saveCheckpoint(true);
     },
 
     bindWorker() {
@@ -1209,15 +1529,82 @@ const Home = {
       return chartColors((name) => style.getPropertyValue(name));
     },
 
+    // Size a chart's canvas to the space the page gives it, at the
+    // screen's pixel density, and return a context that draws in CSS
+    // pixels: { ctx, W, H }.
+    prepareCanvas(canvas) {
+      const { width, height } = chartSize(canvas.clientWidth || 600);
+      const dpr = window.devicePixelRatio || 1;
+      const bw = Math.round(width * dpr);
+      const bh = Math.round(height * dpr);
+
+      if (canvas.width !== bw || canvas.height !== bh) {
+        canvas.width = bw;
+        canvas.height = bh;
+      }
+
+      // the border is part of the CSS height (box-sizing: border-box)
+      const border = canvas.offsetHeight - canvas.clientHeight;
+      const cssHeight = `${height + (border > 0 ? border : 0)}px`;
+      if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
+
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.font = CHART_FONT;
+      ctx.lineWidth = 1;
+
+      return { ctx, W: width, H: height };
+    },
+
+    // Grid lines, tick labels and the frame of a plot area.
+    drawAxes(ctx, colors, { plot, xTicks, yTicks, toX, toY, xTitle, yTitle, H }) {
+      ctx.save();
+      ctx.strokeStyle = colors.grid;
+      ctx.fillStyle = colors.text;
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (const v of xTicks) {
+        const x = Math.round(toX(v)) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, plot.top);
+        ctx.lineTo(x, plot.bottom);
+        ctx.stroke();
+        ctx.fillText(formatTick(v), x, plot.bottom + 5);
+      }
+
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (const v of yTicks) {
+        const y = Math.round(toY(v)) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(plot.left, y);
+        ctx.lineTo(plot.right, y);
+        ctx.stroke();
+        ctx.fillText(formatTick(v), plot.left - 6, y);
+      }
+
+      ctx.strokeStyle = colors.frame;
+      ctx.strokeRect(plot.left + 0.5, plot.top + 0.5, plot.right - plot.left - 1, plot.bottom - plot.top - 1);
+
+      // axis titles
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(xTitle, (plot.left + plot.right) / 2, H - 6);
+      ctx.translate(14, (plot.top + plot.bottom) / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(yTitle, 0, 0);
+      ctx.restore();
+    },
+
     drawCanvas() {
       const canvas = this.$refs.canvas;
 
       if (!canvas) return;
 
-      const ctx = canvas.getContext('2d');
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+      const { ctx, W, H } = this.prepareCanvas(canvas);
       const points = this.sampleData || [];
 
       if (!points.length) return;
@@ -1225,35 +1612,40 @@ const Home = {
       const colors = this.chartColors();
 
       if (this.isMultiVariable) {
-        this.drawPredictedVsActual(ctx, canvas, points, colors);
+        this.drawPredictedVsActual(ctx, W, H, points, colors);
         return;
       }
 
-      const { min: minX, max: maxX } = valueRange(points.map(p => p.x));
-      const { min: minY, max: maxY } = valueRange(points.map(p => p.y));
+      const g = fitGeometry(
+        valueRange(points.map(p => p.x)),
+        valueRange(points.map(p => p.y)),
+        W,
+        H
+      );
+      const { plot, toX, toY } = g;
 
-      const padding = 20;
-      const w = canvas.width - padding * 2;
-      const h = canvas.height - padding * 2;
+      this.drawAxes(ctx, colors, {
+        ...g,
+        H,
+        xTitle: this.activeVariables[0],
+        yTitle: this.targetName || 'y'
+      });
 
-      const toScreenX = linearScale(minX, maxX, padding, padding + w);
-      const toScreenY = linearScale(minY, maxY, canvas.height - padding, canvas.height - padding - h);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(plot.left, plot.top, plot.right - plot.left, plot.bottom - plot.top);
+      ctx.clip();
 
-      // best program (or replay position), clipped to the plot area
+      // best program (or replay position), across the whole plot width
       const model = this.displayModel;
 
       if (model) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, canvas.width, canvas.height);
-        ctx.clip();
-
         ctx.beginPath();
 
         let penDown = false;
 
-        for (let px = 0; px <= w; px++) {
-          const x = minX + (px / w) * (maxX - minX);
+        for (let px = plot.left; px <= plot.right; px++) {
+          const x = g.xRange.min + ((px - plot.left) / (plot.right - plot.left)) * (g.xRange.max - g.xRange.min);
           const y = evaluateTree(model, x);
 
           if (!Number.isFinite(y)) {
@@ -1262,9 +1654,9 @@ const Home = {
           }
 
           if (penDown) {
-            ctx.lineTo(toScreenX(x), toScreenY(y));
+            ctx.lineTo(px, toY(y));
           } else {
-            ctx.moveTo(toScreenX(x), toScreenY(y));
+            ctx.moveTo(px, toY(y));
             penDown = true;
           }
         }
@@ -1272,7 +1664,7 @@ const Home = {
         ctx.strokeStyle = colors.model;
         ctx.lineWidth = 2;
         ctx.stroke();
-        ctx.restore();
+        ctx.lineWidth = 1;
       }
 
       // data points (downsampled for drawing only)
@@ -1282,54 +1674,49 @@ const Home = {
         const p = points[i];
 
         ctx.beginPath();
-        ctx.arc(toScreenX(p.x), toScreenY(p.y), 4, 0, Math.PI * 2);
+        ctx.arc(toX(p.x), toY(p.y), 4, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      ctx.restore();
     },
 
     // With several inputs there is no single x axis: plot each row's
     // prediction against its actual value instead.
-    drawPredictedVsActual(ctx, canvas, points, colors) {
+    drawPredictedVsActual(ctx, W, H, points, colors) {
       const model = this.displayModel;
       const pairs = sampleIndices(points.length, PREDICTED_MAX_POINTS).map((i) => {
         const p = points[i];
         return [p.y, model ? evaluateTree(model, p.v) : NaN];
       });
 
-      const { min: lo, max: hi } = valueRange(points.map(p => p.y));
+      const g = predictedGeometry(valueRange(points.map(p => p.y)), W, H);
+      const { plot, toX, toY, range } = g;
+      const name = this.targetName ? ` ${this.targetName}` : '';
 
-      const pad = 30;
-      const size = Math.min(canvas.width, canvas.height) - pad * 2;
-      const left = (canvas.width - size) / 2;
-      const toX = linearScale(lo, hi, left, left + size);
-      const toY = linearScale(lo, hi, canvas.height - pad, canvas.height - pad - size);
+      this.drawAxes(ctx, colors, {
+        plot,
+        toX,
+        toY,
+        H,
+        xTicks: g.ticks,
+        yTicks: g.ticks,
+        xTitle: `actual${name}`,
+        yTitle: `predicted${name}`
+      });
 
       ctx.save();
-
-      // axes box and labels
-      ctx.strokeStyle = colors.frame;
-      ctx.strokeRect(left, pad, size, size);
-      ctx.fillStyle = colors.text;
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('actual', left + size / 2, canvas.height - 8);
-      ctx.save();
-      ctx.translate(left - 12, pad + size / 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.fillText('predicted', 0, 0);
-      ctx.restore();
+      ctx.beginPath();
+      ctx.rect(plot.left, plot.top, plot.right - plot.left, plot.bottom - plot.top);
+      ctx.clip();
 
       // perfect-prediction diagonal
       ctx.strokeStyle = colors.model;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(toX(lo), toY(lo));
-      ctx.lineTo(toX(hi), toY(hi));
+      ctx.moveTo(toX(range.min), toY(range.min));
+      ctx.lineTo(toX(range.max), toY(range.max));
       ctx.stroke();
-
-      ctx.beginPath();
-      ctx.rect(left, pad, size, size);
-      ctx.clip();
 
       ctx.fillStyle = colors.data;
 
@@ -1348,24 +1735,11 @@ const Home = {
 
       if (!canvas) return;
 
-      const ctx = canvas.getContext('2d');
+      const { ctx, W, H } = this.prepareCanvas(canvas);
       const colors = this.chartColors();
-      const W = canvas.width;
-      const H = canvas.height;
-      const left = 84;
-      const right = 12;
-      const top = 12;
-      const bottom = 28;
-
-      ctx.clearRect(0, 0, W, H);
-      ctx.font = '11px sans-serif';
 
       const lastG = this.series.length ? this.series[this.series.length - 1].g : 1;
-      const maxG = Math.max(lastG, 2);
-
-      const toX = linearScale(1, maxG, left, W - right);
-      const levelToY = linearScale(0, PROGRESS_MIN_LOG, top, H - bottom);
-      const toY = (r2) => levelToY(progressLevel(r2));
+      const { plot, maxG, toX, toY } = progressGeometry(lastG, W, H);
 
       // y grid: R² = 0, 0.9, 0.99, ...
       ctx.strokeStyle = colors.grid;
@@ -1376,19 +1750,19 @@ const Home = {
         const y = toY(r2);
 
         ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(W - right, y);
+        ctx.moveTo(plot.left, y);
+        ctx.lineTo(plot.right, y);
         ctx.stroke();
 
-        ctx.fillText(label, left - 6, y + 4);
+        ctx.fillText(label, plot.left - 6, y + 4);
       }
 
       ctx.textAlign = 'center';
-      ctx.fillText('generation', (left + W - right) / 2, H - 6);
+      ctx.fillText('generation', (plot.left + plot.right) / 2, H - 8);
       ctx.textAlign = 'left';
-      ctx.fillText('1', left, H - 6);
+      ctx.fillText('1', plot.left, H - 8);
       ctx.textAlign = 'right';
-      ctx.fillText(String(maxG), W - right, H - 6);
+      ctx.fillText(String(maxG), plot.right, H - 8);
 
       // target line
       if (Number.isFinite(this.targetR2) && this.targetR2 < 1) {
@@ -1398,8 +1772,8 @@ const Home = {
         ctx.setLineDash([6, 4]);
         ctx.strokeStyle = colors.target;
         ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(W - right, y);
+        ctx.moveTo(plot.left, y);
+        ctx.lineTo(plot.right, y);
         ctx.stroke();
         ctx.restore();
       }
@@ -1445,8 +1819,8 @@ const Home = {
         ctx.strokeStyle = colors.replay;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(x, top);
-        ctx.lineTo(x, H - bottom);
+        ctx.moveTo(x, plot.top);
+        ctx.lineTo(x, plot.bottom);
         ctx.stroke();
         ctx.lineWidth = 1;
       }

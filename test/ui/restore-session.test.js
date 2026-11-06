@@ -128,6 +128,20 @@ test('Clear Results deletes the stored session', async (t) => {
   assert.deepEqual(page.dialogs, []);
 });
 
+test('Undo after Clear Results saves the run again', async (t) => {
+  const page = await openApp(t, { dialogs: 'accept' });
+
+  await runToMaxGenerations(page, 3);
+  await button(page, 'Clear Results').click();
+  await waitForStoredSession(page, (s) => s === null);
+
+  await button(page, 'Undo').click();
+  await waitForStoredSession(page, (s) => s && s.generation === 3);
+
+  await reload(page);
+  await waitForStatus(page, 'Restored session at generation 3.');
+});
+
 test('opening a share link does not offer to restore the saved session', async (t) => {
   const page = await openApp(t, { dialogs: 'accept' });
 

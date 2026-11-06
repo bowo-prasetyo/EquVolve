@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  useBrowser, openApp, setSettings, button, startButton, status, errorBox,
+  useBrowser, openApp, setSettings, button, startButton, errorBox,
   generation, recordGenerations, waitForStatus
 } = require('./helpers');
 
@@ -96,7 +96,7 @@ test('Resume checks the edited settings first', async (t) => {
   await startButton(page).click();
   await waitForStatus(page, 'Stopped at Max Generations (3).');
 
-  await setSettings(page, { 'Population Size': 1 });
+  await setSettings(page, { 'Population Size': 1, 'Max Generations': 10 });
   await button(page, 'Resume').click();
 
   await errorBox(page)
@@ -108,26 +108,121 @@ test('Resume checks the edited settings first', async (t) => {
   assert.equal(await generation(page), 3);
 });
 
-test('Clear Results asks first, then returns to an empty idle state', async (t) => {
+test('Clear Results clears at once, and Undo brings the run back', async (t) => {
   const page = await openApp(t);
 
   await setUnreachableTarget(page, 3);
   await startButton(page).click();
   await waitForStatus(page, 'Stopped at Max Generations (3).');
+  const expression = await page.locator('.expression').innerText();
 
-  // declining the confirmation keeps everything
-  page.answerDialogs = 'dismiss';
-  await button(page, 'Clear Results').click();
-  assert.deepEqual(page.dialogs, ['Clear all evolution results?']);
-  assert.ok(await button(page, 'Resume').isEnabled());
-  assert.equal(await generation(page), 3);
-
-  page.answerDialogs = 'accept';
   await button(page, 'Clear Results').click();
 
+  // no confirmation dialog: an empty, idle page with an Undo
+  assert.deepEqual(page.dialogs, []);
   await startButton(page).waitFor();
   assert.equal(await generation(page), 0);
   assert.equal(await page.locator('.expression').count(), 0);
   assert.equal(await button(page, 'Resume').count(), 0);
-  assert.equal(await status(page).count(), 0);
+  await waitForStatus(page, 'Results cleared.');
+
+  await button(page, 'Undo').click();
+
+  await waitForStatus(page, 'Brought back the run at generation 3.');
+  assert.equal(await generation(page), 3);
+  assert.equal(await page.locator('.expression').innerText(), expression);
+  assert.equal(await button(page, 'Undo').count(), 0);
+
+  // and it carries on from where it was
+  await setSettings(page, { 'Max Generations': 6 });
+  const seen = await recordGenerations(page);
+  await button(page, 'Resume').click();
+  await waitForStatus(page, 'Stopped at Max Generations (6).');
+  assert.ok(Math.min(...await seen()) > 3, `restarted instead of continuing: ${await seen()}`);
+});
+
+test('New run starts again from scratch, and Undo brings back the old run', async (t) => {
+  const page = await openApp(t);
+
+  await setUnreachableTarget(page, 4);
+  await startButton(page).click();
+  await waitForStatus(page, 'Stopped at Max Generations (4).');
+  const expression = await page.locator('.expression').innerText();
+
+  // a fresh run of the same settings, without a dialog
+  await page.locator('#formula').fill('cos(x)');
+  const seen = await recordGenerations(page);
+  await button(page, 'New run').click();
+  await waitForStatus(page, 'Stopped at Max Generations (4).');
+  // the counter went back to the start (in Fast mode it may skip to 4)
+  assert.ok(Math.min(...await seen()) < 4, `started again from scratch: ${await seen()}`);
+  assert.deepEqual(page.dialogs, []);
+
+  await button(page, 'Undo new run').click();
+  await waitForStatus(page, 'Brought back the run at generation 4.');
+  assert.equal(await page.locator('.expression').innerText(), expression);
+  assert.equal(await page.locator('#formula').inputValue(), 'sin(x)');
+});
+
+const primaryButton = (page) => page.locator('.controls button.primary');
+
+test('the main button is the next useful step', async (t) => {
+  const page = await openApp(t);
+
+  assert.equal(await primaryButton(page).innerText(), 'Start Evolution');
+
+  // stopped part-way: Resume
+  await setUnreachableTarget(page, 1000000);
+  await startButton(page).click();
+  await waitForGeneration(page, 2);
+  await button(page, 'Stop').click();
+  await waitForStatus(page, 'Paused.');
+  assert.equal(await primaryButton(page).innerText(), 'Resume');
+  assert.equal(await page.locator('.resume-hint').count(), 0);
+
+  // at Max Generations, resuming would stop at once: New run, and a hint
+  await setSettings(page, { 'Max Generations': 1 });
+  assert.equal(await primaryButton(page).innerText(), 'New run');
+  await page.locator('.resume-hint').filter({ hasText: 'raise Max Generations and press Resume' }).waitFor();
+
+  // Clear Results is there, but no longer the main button
+  assert.ok(await button(page, 'Clear Results').isEnabled());
+
+  // raising it makes Resume the next step again
+  await setSettings(page, { 'Max Generations': 1000000 });
+  assert.equal(await primaryButton(page).innerText(), 'Resume');
+});
+
+test('Resume after reaching the target explains what to change', async (t) => {
+  const page = await openApp(t);
+
+  // sin(x) with + - * fits closely, but never perfectly
+  await page.locator('#formula').fill('sin(x)');
+  await setSettings(page, { 'Target R²': 0.5, 'Max Generations': 1000 });
+  await startButton(page).click();
+  await waitForStatus(page, 'Target R² reached');
+
+  assert.equal(await primaryButton(page).innerText(), 'New run');
+
+  // Resume would stop at once: it says why and goes to the setting
+  const before = await generation(page);
+  await button(page, 'Resume').click();
+  await waitForStatus(page, 'raise Target R² and press Resume');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'setting-targetR2');
+  assert.equal(await generation(page), before, 'nothing ran');
+
+  // raising the target makes Resume the next step again
+  await setSettings(page, { 'Target R²': 0.9999999 });
+  assert.equal(await primaryButton(page).innerText(), 'Resume');
+});
+
+test('a perfect fit offers New run, not Resume', async (t) => {
+  const page = await openApp(t);
+
+  // the default x*x + 2 is found exactly
+  await startButton(page).click();
+  await waitForStatus(page, 'Target R² reached');
+
+  assert.equal(await primaryButton(page).innerText(), 'New run');
+  await page.locator('.resume-hint').filter({ hasText: 'fits the data perfectly' }).waitFor();
 });

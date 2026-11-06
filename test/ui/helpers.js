@@ -47,6 +47,8 @@ const appUrl = () => server.url;
 //   with page.answerDialogs = 'accept'
 // options.readme: a Playwright route handler for the README request
 //   (default: serve the local README.md)
+// options.viewport: { width, height } (default 1280 × 720)
+// options.deviceScaleFactor: the screen's pixel density (default 1)
 // options.clipboard: 'grant' to allow reading and writing the clipboard,
 //   'fail' to make every clipboard write fail (as when it is blocked)
 //
@@ -55,6 +57,8 @@ const appUrl = () => server.url;
 async function openApp(t, options = {}) {
   const context = await browser.newContext({
     colorScheme: options.colorScheme || 'dark',
+    viewport: options.viewport || { width: 1280, height: 720 },
+    deviceScaleFactor: options.deviceScaleFactor || 1,
     permissions: options.clipboard === 'grant' ? ['clipboard-read', 'clipboard-write'] : []
   });
 
@@ -188,16 +192,31 @@ async function uploadCsv(page, text, name = 'data.csv') {
   });
 }
 
-// Fill in run settings. Keys are the labels shown in the app.
+// Fill in run settings. Keys are the labels shown in the app. A setting
+// under the collapsed Advanced settings is filled after opening them,
+// as a visitor would.
 async function setSettings(page, settings) {
   for (const [label, value] of Object.entries(settings)) {
-    await page.getByLabel(label, { exact: false }).first().fill(String(value));
+    const input = page.getByLabel(label, { exact: false }).first();
+
+    if (!(await input.isVisible())) await openAdvanced(page);
+
+    await input.fill(String(value));
+  }
+}
+
+async function openAdvanced(page) {
+  const details = page.locator('details.advanced');
+
+  if (!(await details.evaluate(d => d.open))) {
+    await details.locator('summary').click();
   }
 }
 
 const loadedSummary = (page) => page.locator('.code', { hasText: /^\s*Loaded / });
 const button = (page, name) => page.getByRole('button', { name, exact: true });
 const startButton = (page) => button(page, 'Start Evolution');
+const runBar = (page) => page.locator('.run-bar');
 const status = (page) => page.getByRole('status');
 const errorBox = (page) => page.getByRole('alert');
 const generation = async (page) =>
@@ -235,9 +254,11 @@ module.exports = {
   waitForStoredSession,
   uploadCsv,
   setSettings,
+  openAdvanced,
   loadedSummary,
   button,
   startButton,
+  runBar,
   status,
   errorBox,
   generation,

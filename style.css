@@ -196,12 +196,40 @@ summary {
   cursor: pointer;
 }
 
-summary h2 {
+summary h2,
+summary h3 {
   display: inline;
 }
 
 details[open] summary {
   margin-bottom: 12px;
+}
+
+details.advanced {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+details.advanced summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+/* keep the disclosure triangle, which display: flex removes */
+details.advanced summary::before {
+  content: "▸";
+  color: var(--muted);
+}
+
+details.advanced[open] summary::before {
+  content: "▾";
+}
+
+details.advanced summary::-webkit-details-marker {
+  display: none;
 }
 
 /* ---------- form fields ---------- */
@@ -220,6 +248,37 @@ input[type="text"] {
 
 input.wide {
   width: min(100%, 480px);
+}
+
+.range-inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- validation ---------- */
+
+input[aria-invalid="true"] {
+  border: 2px solid var(--error-border);
+  outline-color: var(--error-border);
+}
+
+.operator-groups.invalid fieldset {
+  border-color: var(--error-border);
+}
+
+.field-error {
+  color: var(--error-text);
+  font-size: 0.9em;
+  font-weight: bold;
+}
+
+.field-error::before {
+  content: "⚠ ";
+}
+
+p.field-error {
+  margin: 6px 0 0;
 }
 
 .field-row {
@@ -328,16 +387,101 @@ button.small {
   font-size: 0.9em;
 }
 
+/* a low-key action, such as Clear Results, kept apart from the main ones */
+button.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+button.quiet:hover:not(:disabled) {
+  color: var(--text);
+}
+
 button.active {
   border-color: var(--accent);
   color: var(--accent);
 }
 
+/* ---------- run bar ----------
+   Sticks to the bottom of the window while its own place (above the
+   results) is further down the page, so Start is always one click away. */
+
+.run-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 0 -20px;
+  padding: 10px 20px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 12px -8px rgba(0, 0, 0, 0.45);
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+
+.run-message {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
   margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--code-bg);
+  line-height: 1.4;
+}
+
+/* a long list of problems scrolls instead of covering the page */
+.run-message.error {
+  display: block;
+  max-height: 35vh;
+  overflow-y: auto;
+}
+
+.run-message.error ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.run-message.error a {
+  color: inherit;
+}
+
+.run-message-title {
+  margin: 0 0 4px;
+  font-weight: bold;
+}
+
+.run-message.note {
+  border-left: 4px solid var(--accent);
+}
+
+.resume-hint {
+  margin: 8px 0 0;
+}
+
+/* phones: keep the bar compact, so it covers little of the page */
+@media (max-width: 600px) {
+  .run-bar {
+    padding: 8px 20px;
+  }
+
+  .run-message {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    font-size: 0.9em;
+  }
+
+  .run-message.error {
+    max-height: 25vh;
+  }
 }
 
 /* ---------- results ---------- */
@@ -444,13 +588,11 @@ svg.tree text {
 }
 
 .error {
-  margin-bottom: 12px;
   border-left: 4px solid var(--error-border);
   color: var(--error-text);
 }
 
 .status {
-  margin-bottom: 12px;
   border-left: 4px solid var(--status-border);
   color: var(--status-text);
 }

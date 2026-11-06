@@ -52,3 +52,65 @@ test('normalizeConfig converts legacy minError to targetR2', () => {
   assert.equal('minError' in c, false);
   assert.equal(c.sampleCount, shared.DEFAULT_SAMPLE_COUNT);
 });
+
+test('validateConfigFields names the field of each problem', () => {
+  const errors = shared.validateConfigFields({
+    ...baseConfig({ targetR2: 0.99 }),
+    populationSize: 1,
+    targetFormula: 'foo(x',
+    minX: 5,
+    maxX: -5,
+    operators: []
+  });
+
+  assert.deepEqual(errors.map(e => e.field).sort(), ['operators', 'populationSize', 'targetFormula', 'xRange']);
+  assert.match(errors.find(e => e.field === 'targetFormula').message, /unknown name "foo"/);
+
+  // validateConfig gives the same problems as messages
+  assert.deepEqual(shared.validateConfig({
+    ...baseConfig({ targetR2: 0.99 }), populationSize: 1, targetFormula: 'foo(x', minX: 5, maxX: -5, operators: []
+  }), errors.map(e => e.message));
+});
+
+test('validateConfigFields checks the formula even when other settings are wrong', () => {
+  const fields = (override) =>
+    shared.validateConfigFields({ ...baseConfig({ targetR2: 0.99 }), ...override }).map(e => e.field);
+
+  assert.deepEqual(fields({ targetFormula: 'x +* 2', tournamentSize: 0 }).sort(), ['targetFormula', 'tournamentSize']);
+  assert.deepEqual(fields({ targetFormula: 'bad(x)', sampleCount: 1 }).sort(), ['sampleCount', 'targetFormula']);
+
+  // a constant target belongs to the formula, or to the dataset
+  assert.deepEqual(fields({ targetFormula: '7' }), ['targetFormula']);
+  assert.deepEqual(
+    fields({ dataMode: 'dataset', variables: ['x'], dataset: [{ x: 1, y: 2 }, { x: 2, y: 2 }] }),
+    ['dataset']
+  );
+});
+
+test('formulaOperators finds the operators a formula needs', () => {
+  const ops = (f) => shared.formulaOperators(f).ops.sort();
+
+  assert.deepEqual(ops('x*x + 2'), ['*', '+']);
+  assert.deepEqual(ops('x*x + 2/x'), ['*', '+', '/']);
+  assert.deepEqual(ops('Math.sin(x) * exp(x/3)'), ['*', '/', 'exp', 'sin']);
+  assert.deepEqual(ops('x - 1'), ['-']);
+
+  // a leading or nested sign is not subtraction
+  assert.deepEqual(ops('-x'), []);
+  assert.deepEqual(ops('exp(-x*x)'), ['*', 'exp']);
+  assert.deepEqual(ops('2 * -x'), ['*']);
+
+  // whole powers are repeated multiplication; others need pow
+  assert.deepEqual(ops('pow(x, 2)'), ['*']);
+  assert.deepEqual(ops('x**3'), ['*']);
+  assert.deepEqual(ops('pow(sin(x), 2)'), ['*', 'sin']);
+  assert.deepEqual(ops('pow(x, 2.5)'), ['pow']);
+  assert.deepEqual(ops('x**x'), ['pow']);
+});
+
+test('formulaOperators lists Math functions that are not operators, and ignores bad formulas', () => {
+  assert.deepEqual(shared.formulaOperators('abs(x) + floor(x)').unsupported, ['abs', 'floor']);
+  assert.deepEqual(shared.formulaOperators('PI * x').unsupported, []);
+  assert.deepEqual(shared.formulaOperators('foo(x)'), { ops: [], unsupported: [] });
+  assert.deepEqual(shared.formulaOperators(''), { ops: [], unsupported: [] });
+});
