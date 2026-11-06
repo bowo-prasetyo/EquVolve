@@ -21,9 +21,16 @@ test('CSV headers become safe, unique variable names', () => {
 });
 
 test('parseCsv reads headers, skips bad rows, and accepts ; or tab separators', () => {
-  const t = s.parseCsv('a,b,"c",y\n1,2,3,4\n5,x,6,7\n\n8;9;10;11\n12\t13\t14\t15\n');
+  const t = s.parseCsv('a,b,"c",y\n1,2,3,4\n5,x,6,7\n\n8,9,10,11\n');
   assert.deepEqual(t.headers, ['a', 'b', 'c', 'y']);
-  assert.deepEqual(t.rows, [[1, 2, 3, 4], [8, 9, 10, 11], [12, 13, 14, 15]]);
+  assert.deepEqual(t.rows, [[1, 2, 3, 4], [8, 9, 10, 11]]);
+  assert.equal(t.delimiter, ',');
+
+  const semi = s.parseCsv('a;b;y\n8;9;10\n');
+  assert.deepEqual([semi.delimiter, semi.rows], [';', [[8, 9, 10]]]);
+
+  const tabs = s.parseCsv('a\tb\ty\n12\t13\t14\n');
+  assert.deepEqual([tabs.delimiter, tabs.rows], ['\t', [[12, 13, 14]]]);
 
   const noHeader = s.parseCsv('1,2\n3,4\n');
   assert.deepEqual(noHeader.headers, ['x1', 'y']);
@@ -132,6 +139,80 @@ test('parseCsv lists the rows it skips, with their line numbers and why', () => 
 
   assert.deepEqual(s.parseCsv('a,y\n1,2\n').skipped, []);
   assert.deepEqual(s.parseCsv('').skipped, []);
+});
+
+test('a file uses one separator, found from its first line', () => {
+  assert.equal(s.detectCsvDelimiter('a,b,y'), ',');
+  assert.equal(s.detectCsvDelimiter('a;b;y'), ';');
+  assert.equal(s.detectCsvDelimiter('a\tb;c,y'), '\t');
+  assert.equal(s.detectCsvDelimiter('"a;b",y'), ',', 'separators inside quotes do not count');
+  assert.equal(s.detectCsvDelimiter('only'), ',');
+
+  // a row written with another separator does not line up, so it is
+  // reported instead of being read into the wrong columns
+  const t = s.parseCsv('a,b,y\n1,2,3\n4;5;6\n7\t8\t9\n');
+  assert.deepEqual(t.rows, [[1, 2, 3]]);
+  assert.deepEqual(t.skipped.map(r => r.reason), ['missing cells', 'missing cells']);
+});
+
+test('parseCsv reads decimal commas from semicolon- and tab-separated files', () => {
+  // as saved by a spreadsheet set to German, French, Indonesian, ...
+  const t = s.parseCsv('height;price\n1,5;2,25\n3,0;-4,75\n,5;1e3\n2.5;7\n');
+  assert.deepEqual(t.headers, ['height', 'price']);
+  assert.deepEqual(t.rows, [[1.5, 2.25], [3, -4.75], [0.5, 1000], [2.5, 7]]);
+  assert.deepEqual(t.skipped, []);
+  assert.equal(t.decimalComma, true);
+
+  const tabs = s.parseCsv('a\ty\n1,5\t2\n');
+  assert.deepEqual(tabs.rows, [[1.5, 2]]);
+  assert.equal(tabs.decimalComma, true);
+
+  // without a header row the first line is data, decimal commas included
+  const noHeader = s.parseCsv('1,5;2\n3;4\n');
+  assert.deepEqual(noHeader.headers, ['x1', 'y']);
+  assert.deepEqual(noHeader.rows, [[1.5, 2], [3, 4]]);
+
+  // thousands separators are not guessed at: the row is reported
+  const thousands = s.parseCsv('a;y\n1.234,5;1\n1;2\n');
+  assert.deepEqual(thousands.rows, [[1, 2]]);
+  assert.deepEqual(thousands.skipped, [{ line: 2, reason: 'text instead of a number' }]);
+
+  assert.equal(s.parseCsv('a;y\n1.5;2\n').decimalComma, false);
+});
+
+test('in a comma-separated file a decimal comma is never read as two numbers', () => {
+  // the bug this guards against: 1,5 split into the cells 1 and 5, and
+  // the cells past the header's width were silently dropped
+  const t = s.parseCsv('a,y\n1,5,2,25\n"1,5",2\n3,4\n');
+  assert.deepEqual(t.rows, [[3, 4]]);
+  assert.deepEqual(t.skipped, [
+    { line: 2, reason: 'too many cells' },
+    { line: 3, reason: 'text instead of a number' }
+  ]);
+  assert.equal(t.decimalComma, false);
+});
+
+test('splitCsvLine keeps separators and quotes inside quoted cells', () => {
+  assert.deepEqual(s.splitCsvLine(' a , "b,c" ,d'), ['a', 'b,c', 'd']);
+  assert.deepEqual(s.splitCsvLine('"say ""hi""";2', ';'), ['say "hi"', '2']);
+  assert.deepEqual(s.splitCsvLine('1,2,'), ['1', '2', '']);
+});
+
+test('parseCsv ignores the byte order mark Excel puts before UTF-8 files', () => {
+  const t = s.parseCsv('﻿height,price\r\n1,2\r\n');
+  assert.deepEqual(t.headers, ['height', 'price']);
+  assert.deepEqual(t.rows, [[1, 2]]);
+});
+
+test('describeCsvFormat says how a non-comma file was read', () => {
+  assert.equal(s.describeCsvFormat(null), '');
+  assert.equal(s.describeCsvFormat(s.parseCsv('a,y\n1,2\n')), '');
+  assert.equal(s.describeCsvFormat(s.parseCsv('a;y\n1;2\n')), 'Separated by semicolons.');
+  assert.equal(
+    s.describeCsvFormat(s.parseCsv('a;y\n1,5;2\n')),
+    'Separated by semicolons, with decimal commas (1,5 is read as 1.5).'
+  );
+  assert.equal(s.describeCsvFormat(s.parseCsv('a\ty\n1\t2\n')), 'Separated by tabs.');
 });
 
 test('describeSkippedRows sums up skipped rows by reason', () => {

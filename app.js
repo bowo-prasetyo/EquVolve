@@ -241,6 +241,8 @@ const Home = {
             </template>
           </p>
 
+          <p v-if="csvFormatText" class="hint csv-format">{{ csvFormatText }}</p>
+
           <p v-if="csvSkippedText" class="hint skipped-rows">{{ csvSkippedText }}</p>
 
           <p v-if="ignoredColumns.length" class="hint ignored-columns">
@@ -725,6 +727,12 @@ const Home = {
 
     csvSkippedText() {
       return describeSkippedRows(this.csvSkipped);
+    },
+
+    // Said only when the file is not plain comma-separated, so a file
+    // saved by a spreadsheet in another language is visibly read right.
+    csvFormatText() {
+      return describeCsvFormat(this.csvTable);
     },
 
     // Columns past the input limit, which datasetFromTable leaves out.

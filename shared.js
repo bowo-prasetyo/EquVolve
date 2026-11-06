@@ -868,26 +868,80 @@ function variableNames(headers) {
   });
 }
 
-function splitCsvLine(line) {
-  return line.split(/[,;\t]/).map(cell => cell.trim().replace(/^"(.*)"$/, '$1'));
+// The separator of a CSV file, from its first line: a tab if there is
+// one, else a semicolon, else a comma. Spreadsheets set to a language
+// that writes decimal commas (1,5) save with semicolons, so a file uses
+// one separator throughout. Separators inside quotes do not count.
+function detectCsvDelimiter(line) {
+  const outside = String(line).replace(/"[^"]*"/g, '');
+  if (outside.includes('\t')) return '\t';
+  if (outside.includes(';')) return ';';
+  return ',';
+}
+
+// Split one line on `delimiter`. A cell in double quotes may contain
+// the separator, and "" inside quotes is a literal quote.
+function splitCsvLine(line, delimiter = ',') {
+  const cells = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"' && !cell.trim()) {
+      quoted = true;
+      cell = '';
+    } else if (ch === delimiter) {
+      cells.push(cell.trim());
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+
+  cells.push(cell.trim());
+  return cells;
+}
+
+// A number written with a decimal comma, such as 1,5 or -0,25e3.
+const DECIMAL_COMMA = /^[+-]?(\d+,\d*|,\d+)(e[+-]?\d+)?$/i;
+
+// A CSV cell as a number (NaN if it is not one). With `decimalComma`,
+// 1,5 is read as 1.5; a comma-separated file cannot use decimal commas,
+// so there "1,5" stays text rather than being guessed at.
+function csvNumber(cell, decimalComma) {
+  if (cell === '') return NaN;
+  if (decimalComma && DECIMAL_COMMA.test(cell)) return Number(cell.replace(',', '.'));
+  return Number(cell);
 }
 
 // Parse CSV text into a header row and numeric rows. A first row that
 // is not all numbers is treated as the header. Rows that cannot be used
 // are listed in `skipped` as { line, reason }, with `line` the row's
 // line number in the file (1 = the first line), so the page can say
-// which rows it left out and why.
+// which rows it left out and why. `delimiter` is the separator found
+// (see detectCsvDelimiter), and `decimalComma` is true when at least
+// one number was written with a decimal comma.
 function parseCsv(text) {
-  const lines = String(text).split(/\r?\n/)
+  const lines = String(text).replace(/^﻿/, '').split(/\r?\n/)
     .map((l, i) => ({ text: l, line: i + 1 }))
     .filter(l => l.text.trim());
 
   if (!lines.length) {
-    return { headers: [], rows: [], skipped: [] };
+    return { headers: [], rows: [], skipped: [], delimiter: ',', decimalComma: false };
   }
 
-  const first = splitCsvLine(lines[0].text);
-  const hasHeader = first.some(cell => cell === '' || !Number.isFinite(Number(cell)));
+  const delimiter = detectCsvDelimiter(lines[0].text);
+  const commaDecimals = delimiter !== ',';
+  const split = (line) => splitCsvLine(line, delimiter);
+
+  const first = split(lines[0].text);
+  const hasHeader = first.some(cell => !Number.isFinite(csvNumber(cell, commaDecimals)));
   const width = first.length;
 
   const headers = hasHeader ?
@@ -896,12 +950,21 @@ function parseCsv(text) {
 
   const rows = [];
   const skipped = [];
+  let decimalComma = false;
 
   for (const { text: line, line: number } of hasHeader ? lines.slice(1) : lines) {
-    const cells = splitCsvLine(line);
+    const cells = split(line);
 
     if (cells.length < width) {
       skipped.push({ line: number, reason: 'missing cells' });
+      continue;
+    }
+
+    // A trailing separator is harmless, but a value past the header's
+    // width means the columns do not line up, so the row is not used
+    // rather than being read into the wrong columns.
+    if (cells.slice(width).some(cell => cell !== '')) {
+      skipped.push({ line: number, reason: 'too many cells' });
       continue;
     }
 
@@ -913,16 +976,29 @@ function parseCsv(text) {
       continue;
     }
 
-    const values = kept.map(Number);
+    const values = kept.map(cell => csvNumber(cell, commaDecimals));
 
     if (values.every(Number.isFinite)) {
       rows.push(values);
+      if (commaDecimals && kept.some(cell => DECIMAL_COMMA.test(cell))) decimalComma = true;
     } else {
       skipped.push({ line: number, reason: 'text instead of a number' });
     }
   }
 
-  return { headers, rows, skipped };
+  return { headers, rows, skipped, delimiter, decimalComma };
+}
+
+// How parseCsv read a file, in words, when it is not plain
+// comma-separated: "Separated by semicolons, with decimal commas (1,5
+// is read as 1.5)." Empty for comma-separated files.
+function describeCsvFormat(table) {
+  if (!table || !table.delimiter || table.delimiter === ',') return '';
+
+  const by = table.delimiter === '\t' ? 'tabs' : 'semicolons';
+  return table.decimalComma ?
+    `Separated by ${by}, with decimal commas (1,5 is read as 1.5).` :
+    `Separated by ${by}.`;
 }
 
 // A short summary of parseCsv's skipped rows, such as
@@ -1661,6 +1737,9 @@ if (typeof module !== 'undefined' && module.exports) {
     exportProgram,
     variableNames,
     parseCsv,
+    detectCsvDelimiter,
+    describeCsvFormat,
+    splitCsvLine,
     describeSkippedRows,
     sampleCsv,
     fitQuality,

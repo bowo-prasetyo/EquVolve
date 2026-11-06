@@ -84,16 +84,18 @@ height,width,depth,price
 - One column is the **target**, the value to predict: the last column by default. With three or more columns, the **Target column** menu lets you choose another.
 - Every other column is an **input**, named after its header (up to 10 inputs).
 - With **one input**, it is called `x`, and the chart shows the data with the fitted curve. With **several inputs**, the chart shows each row's predicted value against its actual value.
-- Rows with an empty cell, missing cells or text instead of a number are skipped. The app says how many, and which lines of the file, with the reason (for example *Skipped 2 rows: line 4 (an empty cell); line 9 (text instead of a number).*).
+- Rows with an empty cell, missing or extra cells, or text instead of a number are skipped. The app says how many, and which lines of the file, with the reason (for example *Skipped 2 rows: line 4 (an empty cell); line 9 (text instead of a number).*).
 - Once loaded, a **preview** shows the first five rows as EquVolve reads them, with the target column marked, so you can check the columns before a run.
 - No file to hand? **Use sample data** loads a small example (the price of boxes from their height, width and depth), and **Download sample CSV** saves it, to see the format or use as a template.
 
 <details>
 <summary>CSV details</summary>
 
-- Commas, semicolons and tabs all work as separators, and can be mixed. Quotes around a cell are removed, but a quoted cell cannot contain a separator.
+- Commas, semicolons and tabs all work as separators. A file uses one separator throughout, found from its first line (a tab if there is one, else a semicolon, else a comma); when it is not a comma, the app says which it found under the loaded file.
+- **Decimal commas** work in semicolon- and tab-separated files, as saved by spreadsheets set to a language such as German, French or Indonesian: `1,5` is read as 1.5. In a comma-separated file numbers must use a decimal point. Thousands separators (`1.234,5`) are not supported; such rows are reported as text.
+- A cell in double quotes may contain the separator (`"Height, cm"`), and `""` inside quotes is a quote. A UTF-8 byte order mark, which Excel adds to *CSV UTF-8* files, is ignored.
 - If the first row is all numbers, it is treated as data, and the columns are called `x1`, `x2`, … and `y`.
-- Only the first 10 input columns are used; any after that are ignored, and the app names them under the loaded file. Cells beyond the header's width are ignored too.
+- Only the first 10 input columns are used; any after that are ignored, and the app names them under the loaded file. A row with more cells than the header is skipped (*too many cells*), as its values do not line up with the columns; a single trailing separator is fine.
 - Input names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`. A name that starts with a digit, or clashes with a `Math` name or a JavaScript or Python keyword, gets a `v_` prefix (`sin` becomes `v_sin`). Repeated names get `_2`, `_3`, … added.
 - With several inputs the chart draws up to 400 rows.
 
@@ -206,6 +208,7 @@ Runs are random, and some formulas are hard to find. Stopping at Max Generations
 | Target values are constant                                     | The data must vary; a flat line has nothing to fit.                                           |
 | The CSV needs at least two columns of numbers                  | Check that the file has at least two columns of numbers, separated by commas, semicolons or tabs. |
 | Upload a CSV dataset with at least 2 valid rows                | Upload a file, or check its rows: rows with empty cells or text are skipped.                  |
+| Skipped … rows: … (too many cells)                             | The row has more values than the header has columns. In a comma-separated file this usually means numbers written with decimal commas: save the file with semicolons as separators instead, or use decimal points. |
 | Select at least one operator                                   | Tick an operator, or press a preset.                                                         |
 | Your formula uses …, which is not ticked under Operators       | Press the **Tick …** button next to it, or a preset that includes it. Without it a run can only approximate the formula. |
 | … is not available as an operator, so a run can only approximate it | The formula uses a maths function that is not one of the 23 operators, such as `abs`. Nothing to fix: the run still works, but finds an approximation built from the ticked operators. |
