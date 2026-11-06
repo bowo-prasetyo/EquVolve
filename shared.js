@@ -1242,8 +1242,99 @@ function buildSharePayload({ config, model, r2, generation, fileName }) {
   return payload;
 }
 
+// =========================================================
+// CHARTS
+// =========================================================
+// The geometry of the fit and progress charts drawn in app.js, kept as
+// plain functions so it can be tested without a canvas.
+
+// Colours drawn on the charts' canvases (which have a white background
+// in both themes).
+const CHART_COLORS = {
+  data: '#00b7c7',   // data points
+  model: 'red',      // best program, perfect-prediction diagonal
+  median: '#999',    // median program on the progress chart
+  target: 'green',   // dashed target R² line
+  replay: '#3366cc', // replay position on the progress chart
+  grid: '#ddd',
+  frame: '#ccc',
+  text: '#555'
+};
+
+// The progress chart shows 1 - R² on a log scale from 1 (R² = 0) down to
+// 10^PROGRESS_MIN_LOG (R² = 0.999999).
+const PROGRESS_MIN_LOG = -6;
+
+// The smallest and largest of `values`, widened by 1 either way when
+// they are equal, so a scale over the range never divides by zero.
+function valueRange(values) {
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (const v of values) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+
+  return { min, max };
+}
+
+// Maps [min, max] linearly onto [from, to] (to may be below from, as
+// for a y axis that grows upwards on screen).
+function linearScale(min, max, from, to) {
+  return (v) => from + ((v - min) / (max - min)) * (to - from);
+}
+
+// The indices drawn when about `maxCount` of `count` items are shown:
+// evenly spread, always starting with the first. Floating-point steps
+// can fit in one more than `maxCount`.
+function sampleIndices(count, maxCount) {
+  const step = Math.max(1, count / maxCount);
+  const out = [];
+
+  for (let i = 0; i < count; i += step) {
+    out.push(Math.floor(i));
+  }
+
+  return out;
+}
+
+// The progress chart's height for an R²: log10(1 - R²), clamped to
+// [minLog, 0]. A perfect fit (R² >= 1) sits on the bottom edge, and an
+// R² that is not a number (or -Infinity) on the top edge.
+function progressLevel(r2, minLog = PROGRESS_MIN_LOG) {
+  const err = 1 - r2;
+  const v = Number.isFinite(err) && err > 0 ? Math.log10(err) : (err <= 0 ? minLog : 0);
+
+  return Math.min(0, Math.max(minLog, v));
+}
+
+// The progress chart's grid lines: R² = 0, 0.9, 0.99, … with labels.
+function progressGrid(minLog = PROGRESS_MIN_LOG) {
+  const lines = [];
+
+  for (let k = 0; k >= minLog; k--) {
+    const r2 = 1 - Math.pow(10, k);
+    lines.push({ r2, label: `R² ${k === 0 ? '0' : r2.toFixed(-k)}` });
+  }
+
+  return lines;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    CHART_COLORS,
+    PROGRESS_MIN_LOG,
+    valueRange,
+    linearScale,
+    sampleIndices,
+    progressLevel,
+    progressGrid,
     OP_ARITY,
     DEFAULT_SAMPLE_COUNT,
     MAX_TREE_DEPTH_LIMIT,

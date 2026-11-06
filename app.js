@@ -64,6 +64,11 @@ const MAX_TIMELINE = 300;
 const HISTORY_LENGTH = 5;
 const REPLAY_INTERVAL_MS = 450;
 
+// At most this many data points are drawn on the fit chart (the engine
+// still trains on all of them).
+const FIT_MAX_POINTS = 60;
+const PREDICTED_MAX_POINTS = 400;
+
 const OP_LABELS = { '*': '×', '/': '÷', '-': '−' };
 
 const Home = {
@@ -1199,34 +1204,15 @@ const Home = {
         return;
       }
 
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minY = Infinity;
-      let maxY = -Infinity;
-
-      for (const p of points) {
-        minX = Math.min(minX, p.x);
-        maxX = Math.max(maxX, p.x);
-        minY = Math.min(minY, p.y);
-        maxY = Math.max(maxY, p.y);
-      }
-
-      if (minX === maxX) {
-        minX -= 1;
-        maxX += 1;
-      }
-
-      if (minY === maxY) {
-        minY -= 1;
-        maxY += 1;
-      }
+      const { min: minX, max: maxX } = valueRange(points.map(p => p.x));
+      const { min: minY, max: maxY } = valueRange(points.map(p => p.y));
 
       const padding = 20;
       const w = canvas.width - padding * 2;
       const h = canvas.height - padding * 2;
 
-      const toScreenX = (x) => padding + ((x - minX) / (maxX - minX)) * w;
-      const toScreenY = (y) => canvas.height - padding - ((y - minY) / (maxY - minY)) * h;
+      const toScreenX = linearScale(minX, maxX, padding, padding + w);
+      const toScreenY = linearScale(minY, maxY, canvas.height - padding, canvas.height - padding - h);
 
       // best program (or replay position), clipped to the plot area
       const model = this.displayModel;
@@ -1258,20 +1244,17 @@ const Home = {
           }
         }
 
-        ctx.strokeStyle = 'red';
+        ctx.strokeStyle = CHART_COLORS.model;
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.restore();
       }
 
       // data points (downsampled for drawing only)
-      const maxPoints = 60;
-      const step = Math.max(1, points.length / maxPoints);
+      ctx.fillStyle = CHART_COLORS.data;
 
-      ctx.fillStyle = '#00b7c7';
-
-      for (let i = 0; i < points.length; i += step) {
-        const p = points[Math.floor(i)];
+      for (const i of sampleIndices(points.length, FIT_MAX_POINTS)) {
+        const p = points[i];
 
         ctx.beginPath();
         ctx.arc(toScreenX(p.x), toScreenY(p.y), 4, 0, Math.PI * 2);
@@ -1283,41 +1266,25 @@ const Home = {
     // prediction against its actual value instead.
     drawPredictedVsActual(ctx, canvas, points) {
       const model = this.displayModel;
-      const maxPoints = 400;
-      const step = Math.max(1, points.length / maxPoints);
-      const pairs = [];
+      const pairs = sampleIndices(points.length, PREDICTED_MAX_POINTS).map((i) => {
+        const p = points[i];
+        return [p.y, model ? evaluateTree(model, p.v) : NaN];
+      });
 
-      for (let i = 0; i < points.length; i += step) {
-        const p = points[Math.floor(i)];
-        const predicted = model ? evaluateTree(model, p.v) : NaN;
-        pairs.push([p.y, predicted]);
-      }
-
-      let lo = Infinity;
-      let hi = -Infinity;
-
-      for (const p of points) {
-        lo = Math.min(lo, p.y);
-        hi = Math.max(hi, p.y);
-      }
-
-      if (lo === hi) {
-        lo -= 1;
-        hi += 1;
-      }
+      const { min: lo, max: hi } = valueRange(points.map(p => p.y));
 
       const pad = 30;
       const size = Math.min(canvas.width, canvas.height) - pad * 2;
       const left = (canvas.width - size) / 2;
-      const toX = (v) => left + ((v - lo) / (hi - lo)) * size;
-      const toY = (v) => canvas.height - pad - ((v - lo) / (hi - lo)) * size;
+      const toX = linearScale(lo, hi, left, left + size);
+      const toY = linearScale(lo, hi, canvas.height - pad, canvas.height - pad - size);
 
       ctx.save();
 
       // axes box and labels
-      ctx.strokeStyle = '#ccc';
+      ctx.strokeStyle = CHART_COLORS.frame;
       ctx.strokeRect(left, pad, size, size);
-      ctx.fillStyle = '#555';
+      ctx.fillStyle = CHART_COLORS.text;
       ctx.font = '11px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('actual', left + size / 2, canvas.height - 8);
@@ -1328,7 +1295,7 @@ const Home = {
       ctx.restore();
 
       // perfect-prediction diagonal
-      ctx.strokeStyle = 'red';
+      ctx.strokeStyle = CHART_COLORS.model;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(toX(lo), toY(lo));
@@ -1339,7 +1306,7 @@ const Home = {
       ctx.rect(left, pad, size, size);
       ctx.clip();
 
-      ctx.fillStyle = '#00b7c7';
+      ctx.fillStyle = CHART_COLORS.data;
 
       for (const [actual, predicted] of pairs) {
         if (!Number.isFinite(predicted)) continue;
@@ -1363,7 +1330,6 @@ const Home = {
       const right = 12;
       const top = 12;
       const bottom = 28;
-      const minLog = -6;
 
       ctx.clearRect(0, 0, W, H);
       ctx.font = '11px sans-serif';
@@ -1371,21 +1337,16 @@ const Home = {
       const lastG = this.series.length ? this.series[this.series.length - 1].g : 1;
       const maxG = Math.max(lastG, 2);
 
-      const toX = (g) => left + ((g - 1) / (maxG - 1)) * (W - left - right);
-      const toY = (r2) => {
-        const err = 1 - r2;
-        const v = Number.isFinite(err) && err > 0 ? Math.log10(err) : (err <= 0 ? minLog : 0);
-        const clamped = Math.min(0, Math.max(minLog, v));
-        return top + (clamped / minLog) * (H - top - bottom);
-      };
+      const toX = linearScale(1, maxG, left, W - right);
+      const levelToY = linearScale(0, PROGRESS_MIN_LOG, top, H - bottom);
+      const toY = (r2) => levelToY(progressLevel(r2));
 
       // y grid: R² = 0, 0.9, 0.99, ...
-      ctx.strokeStyle = '#ddd';
-      ctx.fillStyle = '#555';
+      ctx.strokeStyle = CHART_COLORS.grid;
+      ctx.fillStyle = CHART_COLORS.text;
       ctx.textAlign = 'right';
 
-      for (let k = 0; k >= minLog; k--) {
-        const r2 = 1 - Math.pow(10, k);
+      for (const { r2, label } of progressGrid()) {
         const y = toY(r2);
 
         ctx.beginPath();
@@ -1393,7 +1354,7 @@ const Home = {
         ctx.lineTo(W - right, y);
         ctx.stroke();
 
-        ctx.fillText(`R² ${k === 0 ? '0' : r2.toFixed(-k)}`, left - 6, y + 4);
+        ctx.fillText(label, left - 6, y + 4);
       }
 
       ctx.textAlign = 'center';
@@ -1409,7 +1370,7 @@ const Home = {
 
         ctx.save();
         ctx.setLineDash([6, 4]);
-        ctx.strokeStyle = 'green';
+        ctx.strokeStyle = CHART_COLORS.target;
         ctx.beginPath();
         ctx.moveTo(left, y);
         ctx.lineTo(W - right, y);
@@ -1440,12 +1401,12 @@ const Home = {
       };
 
       if (this.series.length) {
-        line('median', '#999', 1.5);
-        line('best', 'red', 2);
+        line('median', CHART_COLORS.median, 1.5);
+        line('best', CHART_COLORS.model, 2);
 
         // mark the latest best so a one-generation run is visible too
         const last = this.series[this.series.length - 1];
-        ctx.fillStyle = 'red';
+        ctx.fillStyle = CHART_COLORS.model;
         ctx.beginPath();
         ctx.arc(toX(last.g), toY(last.best), 3.5, 0, Math.PI * 2);
         ctx.fill();
@@ -1455,7 +1416,7 @@ const Home = {
       if (this.replayEntry) {
         const x = toX(this.replayEntry.g);
 
-        ctx.strokeStyle = '#3366cc';
+        ctx.strokeStyle = CHART_COLORS.replay;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(x, top);

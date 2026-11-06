@@ -147,6 +147,24 @@ function storedSession(page) {
   });
 }
 
+// Write a checkpoint into IndexedDB as if a run had saved it, after the
+// app has created the database. Reload the page to be offered it.
+async function storeSession(page, state) {
+  await page.waitForFunction(async () =>
+    (await indexedDB.databases()).some(d => d.name === 'gp-db' && d.version === 2));
+
+  await page.evaluate((s) => new Promise((resolve, reject) => {
+    const open = indexedDB.open('gp-db');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('sessions', 'readwrite');
+      tx.objectStore('sessions').put({ id: 'latest', ...s });
+      tx.oncomplete = () => { open.result.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  }), state);
+}
+
 // Wait until the stored checkpoint matches `check` (writes are async).
 async function waitForStoredSession(page, check, timeout = 10000) {
   const until = Date.now() + timeout;
@@ -213,6 +231,7 @@ module.exports = {
   openTab,
   reload,
   storedSession,
+  storeSession,
   waitForStoredSession,
   uploadCsv,
   setSettings,
