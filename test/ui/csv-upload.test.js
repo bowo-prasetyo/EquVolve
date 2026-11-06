@@ -93,7 +93,7 @@ test('a CSV without two numeric columns is rejected with a message', async (t) =
   await uploadCsv(page, 'only\n1\n2\n3\n', 'one-column.csv');
 
   await errorBox(page)
-    .filter({ hasText: 'The CSV needs a header row and at least two numeric columns.' })
+    .filter({ hasText: 'The CSV needs at least two columns of numbers, separated by commas, semicolons or tabs.' })
     .waitFor();
   assert.equal(await loadedSummary(page).count(), 0);
 });

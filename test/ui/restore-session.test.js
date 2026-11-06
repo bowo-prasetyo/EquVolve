@@ -10,7 +10,7 @@ const {
 
 useBrowser();
 
-const RESTORE_PROMPT = 'Restore previous GP evolution session?';
+const RESTORE_PROMPT = 'Restore your previous run? It comes back paused, where you left it.';
 
 // Run sin(x) (never solved exactly by + - *) to `generations`, and wait
 // until the finished run's checkpoint is in IndexedDB.

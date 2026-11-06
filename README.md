@@ -4,9 +4,9 @@
 
 *Watch equations evolve.* EquVolve (pronounced **EK-yoo-volve**) joins *equation* and *evolve*.
 
-**A zero-install, in-browser symbolic regression playground.** Give it a formula or a CSV of data and watch Genetic Programming (GP) evolve a mathematical expression that explains the data, live, with the curve fit and expression tree on screen as it happens.
+**EquVolve finds a formula that fits your data, and lets you watch it happen.** Give it a formula or a CSV file of numbers, and it breeds candidate formulas, keeps the ones that fit best, and improves them generation by generation, with the fitted curve and the formula's tree on screen as it goes. The method is called *genetic programming* (GP), and finding a formula this way is called *symbolic regression*.
 
-It is built for **learning and exploring** how GP works, with light practical use (fitting a formula to a small dataset) as a secondary goal. Everything runs locally in your browser; there is no backend and your data never leaves your machine.
+It is built for **learning and exploring** how GP works, and for light practical use, such as fitting a formula to a small dataset. Everything runs in your browser: nothing to install, no server, and your data never leaves your computer.
 
 - Live demo: [bowo-prasetyo.github.io/equvolve](https://bowo-prasetyo.github.io/equvolve/#/)
 - Repository: [github.com/bowo-prasetyo/equvolve](https://github.com/bowo-prasetyo/equvolve)
@@ -15,44 +15,65 @@ It is built for **learning and exploring** how GP works, with light practical us
 
 ## What it does
 
-- **Two data sources:** sample a target formula over an X range, or upload a CSV dataset.
-- **Several input variables:** a CSV may have up to 10 input columns; pick which column to predict.
-- **Live evolution** in a Web Worker, so the page stays responsive. Fast mode runs many generations between screen updates; slow mode shows every generation.
+- **Two kinds of data:** a target formula sampled over a range of `x`, or your own CSV file.
+- **Several inputs:** a CSV may have up to 10 input columns; you pick which column to predict.
+- **Live evolution** in the background, so the page stays responsive. Fast mode runs many generations between screen updates; slow mode shows every generation.
 - **Replay:** step or play through every improvement of a run, watching the formula, fit and tree change.
-- **Readable results:** the best program is simplified before it is shown (`(2.469 + ((-2.507 + x*x) - -1.712))` becomes `pow(x, 2) + 1.674`), drawn as an expression tree, and plotted over the data.
-- **Progress chart:** the best and median fit of every generation, on a log scale, against your target.
-- **Export:** copy the best program as a formula, JavaScript, Python or LaTeX.
-- **Share links:** one click copies a link containing the settings, the data (up to 2,000 points) and the best program.
-- **Linear scaling** (on by default): evolution only has to find the *shape* of the data; the best offset and scale are fitted exactly.
-- **Configurable search:** population, generations, target R², crossover / mutation / elitism rates, tournament size, tree depths, and 23 operators with presets.
+- **Readable results:** the best formula is simplified before it is shown (`(2.469 + ((-2.507 + x*x) - -1.712))` becomes `pow(x, 2) + 1.674`), drawn as a tree, and plotted over the data.
+- **Progress chart:** how well the best and the typical formula fit, generation by generation, against your target.
+- **Export:** copy the best formula as plain text, JavaScript, Python or LaTeX.
+- **Share links:** one click copies a link with the settings, the data (up to 2,000 rows) and the best formula.
+- **Adjustable search:** population, generations, target fit, the evolution rates, tree depths, and 23 operators with presets.
 - **Light and dark themes:** the whole page, charts included, follows your device's setting by default; the button in the top bar switches between Auto, Light and Dark, and the choice is remembered in this browser.
-- **Pause, resume and restore:** stop a run, change settings, and resume. The session is checkpointed to IndexedDB, so it survives closing the tab or restarting the browser.
-- **Input validation:** invalid formulas, ranges or settings are reported before a run starts.
+- **Stop, resume and restore:** stop a run, change settings and carry on. Your run is saved in the browser, so it survives closing the tab.
+- **Checks before running:** invalid formulas, ranges or settings are reported before a run starts.
 
 ---
 
 ## Quick start
 
 1. Open the [live demo](https://bowo-prasetyo.github.io/equvolve/#/).
-2. Keep the default target `x*x + 2` and press **Start Evolution**. It is solved in the first generation.
-3. Now try something harder: set the formula to `sin(x) * exp(x/3)`, pick the **Everything** operator preset and press **Start Evolution**. Watch the progress chart fall towards the dashed target line.
+2. Keep the default formula `x*x + 2` and press **Start Evolution**. It is found in the first generation.
+3. Now one that takes a little longer: set the formula to `x*x + 2/x`, press the **Rational** operator preset, and press **Start Evolution**. On the progress chart, the red line steps down towards the dashed green target line, usually within 100 generations.
 4. When it stops, press **▶ Replay** to watch how the formula improved over the run.
+5. Ready for something hard? Try `sin(x) * exp(x/3)` with the **Everything** preset. It usually stops at Max Generations just short of the target; [When a run does not reach the target](#when-a-run-does-not-reach-the-target) explains what to do next.
+
+---
+
+## Key ideas
+
+- **Program:** one candidate formula, built from operators (such as `+` or `sin`), the input variables and numbers. EquVolve shows each one as a formula and as a tree.
+- **Population:** all the programs being tried at once (200 by default).
+- **Generation:** one round of evolution. The best programs are kept, combined and changed a little to make the next population.
+- **R² (the fit):** how well a program matches the data. 1 is a perfect fit, 0 is no better than always predicting the average, and below 0 is worse than that. A run stops as soon as the best program reaches the **Target R²** (0.999 by default).
+- **Best program:** the program with the best fit so far. Each program's score includes a small penalty for its size, so results stay short and readable.
 
 ---
 
 ## How to use
 
-### 1. Choose a data source
+The app has three numbered panels: **1. Data**, **2. Settings** and **3. Results**, with the run buttons between Settings and Results.
 
-**Generate from formula:** enter a target formula and an X range.
+### 1. Data: what to fit
 
-- Formulas are arithmetic expressions in `x` using numbers, parentheses, commas and the operators `+ - * / % **`. Every name on JavaScript's `Math` is available, so `sin(x)`, `pow(x, 2)`, `exp(-x*x)`, `abs(x)` and `PI * x` work, as does `Math.sin(x)`.
-- Nothing else is allowed (no other names, strings, square brackets or statements). This keeps formulas from shared links safe to open.
-- Because results use the same syntax, you can paste a result back in as a new target.
-- **Sample points** (default 101, from 2 to 10,000) are spaced evenly across the X range, both ends included. The engine trains on exactly these points. The graph draws the same points, thinned to about 60 markers when there are more.
-- Points where the formula is not finite (for example `1/x` at `x = 0`) are skipped. At least two finite points are needed.
+Choose a **data source**.
 
-**Upload dataset:** upload a CSV with numeric columns, usually with a header row:
+**Generate from formula:** enter a formula and an X range.
+
+- Write formulas in `x`, with numbers, brackets `( )`, `+ - * /` and maths functions such as `sin(x)`, `pow(x, 2)`, `exp(-x*x)`, `abs(x)` or `PI * x`. Every name on JavaScript's `Math` works, with or without `Math.` in front.
+- Results use the same notation, so you can paste a result back in as a new formula.
+- **Sample points** (101 by default) are spaced evenly across the X range, both ends included. These are the points the run tries to fit.
+
+<details>
+<summary>Formula details</summary>
+
+- Also allowed: commas (as in `pow(x, 2)`), `%` and `**`. Nothing else is accepted (no other names, strings, square brackets or statements), so a formula in a shared link cannot run other code.
+- Sample Points can be from 2 to 10,000. The chart marks at most about 60 of them, but the run uses all of them.
+- Points where the formula has no finite value (for example `1/x` at `x = 0`) are skipped. At least two must remain.
+
+</details>
+
+**Upload dataset:** choose a CSV file of numbers, usually with a header row:
 
 ```csv
 height,width,depth,price
@@ -60,75 +81,124 @@ height,width,depth,price
 2.0,3.0,2.8,22.7
 ```
 
-- One column is the **target** to predict: the last one by default. With three or more columns, a **Target column** menu lets you choose another.
-- Every other column becomes an **input variable**, named after its header. Only the first 10 input columns are used; any after that are ignored. Names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`. A name that starts with a digit, or clashes with a `Math` name or a JavaScript or Python keyword, gets a `v_` prefix (`sin` becomes `v_sin`). Repeated names get `_2`, `_3`, … appended.
-- With a **single input**, the variable is called `x` and the graph plots the data with the fitted curve. With **several inputs** the graph plots each row's prediction against its actual value (up to 400 rows are drawn).
-- Commas, semicolons and tabs all work as separators, and can be mixed. Quoted cells are unquoted, but a quoted cell cannot contain a separator. A first row that is all numbers is treated as data, and the columns are called `x1`, `x2`, … and `y`.
-- Rows with too few cells, an empty cell (as in `1.5,,3`) or a non-numeric value are skipped, and cells beyond the header's width are ignored. Every other row is used for training.
+- One column is the **target**, the value to predict: the last column by default. With three or more columns, the **Target column** menu lets you choose another.
+- Every other column is an **input**, named after its header (up to 10 inputs).
+- With **one input**, it is called `x`, and the chart shows the data with the fitted curve. With **several inputs**, the chart shows each row's predicted value against its actual value.
+- Rows with an empty cell, missing cells or text instead of a number are skipped.
 
-### 2. Configure the run
+<details>
+<summary>CSV details</summary>
 
-Every setting has a short explanation under it in the app.
+- Commas, semicolons and tabs all work as separators, and can be mixed. Quotes around a cell are removed, but a quoted cell cannot contain a separator.
+- If the first row is all numbers, it is treated as data, and the columns are called `x1`, `x2`, … and `y`.
+- Only the first 10 input columns are used; any after that are ignored. Cells beyond the header's width are ignored too.
+- Input names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`. A name that starts with a digit, or clashes with a `Math` name or a JavaScript or Python keyword, gets a `v_` prefix (`sin` becomes `v_sin`). Repeated names get `_2`, `_3`, … added.
+- With several inputs the chart draws up to 400 rows.
 
-| Setting            | Meaning                                                                                       | Default |
-| ------------------ | --------------------------------------------------------------------------------------------- | ------- |
-| Population Size    | Programs per generation (constant for the whole run; at least 2)                              | 200     |
-| Max Generations    | Stop after this many generations                                                              | 500     |
-| Target R²          | Stop as soon as the best program reaches this R² (1 = perfect fit; at most 1)                 | 0.999   |
-| Crossover Rate     | Probability (0–1) that an offspring is made by subtree crossover rather than copying a parent  | 0.7     |
-| Mutation Rate      | Probability (0–1) that an offspring is then mutated                                           | 0.1     |
-| Elitism Rate       | Fraction (0–1) of the best programs copied unchanged into the next generation                 | 0.05    |
-| Tournament Size    | Programs compared in each selection tournament (at least 1); larger is greedier               | 5       |
-| Initial Tree Depth | Maximum depth of the random programs that start the run (1–12)                                | 4       |
-| Max Tree Depth     | Hard depth limit for evolved programs, to stop them bloating (from Initial Tree Depth to 17)  | 8       |
-| Linear scaling     | Score each program as `a + b·f(x)` with the best-fitting `a` and `b`                          | on      |
-| Constant optimisation | Experimental: fine-tune the constants of a random 10% of programs each generation. It did not improve results in our benchmark (see [How it works](#constant-optimisation-experimental)). | off |
-| Speed              | **Fast:** as many generations as fit in about 40 ms per screen update. **Slow:** one generation per update with a 150 ms pause (at most about 6 per second), for watching. | Fast |
-| Operators          | The building blocks the search may use                                                        | `+ - *` |
+</details>
 
-The defaults were checked with the benchmark described under [Example results](#example-results). Crossover 0.8, mutation 0.2 and elitism 0.02 did slightly worse on the harder targets.
+### 2. Settings: how to search
 
-**Operator presets:** Polynomial (`+ - *`), Rational (adds `/`), Trigonometric (adds `sin cos`), Exp / Log (adds `exp log`) and Everything.
+Every setting has a short explanation under it in the app. Most of the time you only need **Operators**, **Max Generations** and **Target R²**; the others are for exploring how GP behaves.
 
-All operators:
+| Setting            | What it does                                                                                     | Default |
+| ------------------ | ------------------------------------------------------------------------------------------------ | ------- |
+| Population Size    | How many programs are tried at once. More can find harder formulas, but each generation is slower (at least 2). | 200     |
+| Max Generations    | The run pauses after this many generations. You can raise it and press **Resume**.               | 500     |
+| Target R²          | The run stops as soon as the best program fits this well (1 = perfect, at most 1).               | 0.999   |
+| Crossover Rate     | How often (0–1) a new program combines parts of two good programs, instead of copying one.        | 0.7     |
+| Mutation Rate      | How often (0–1) a new program then gets a small random change.                                   | 0.1     |
+| Elitism Rate       | The share (0–1) of the best programs kept unchanged for the next generation.                      | 0.05    |
+| Tournament Size    | Parents are chosen by letting this many random programs compete. Larger values favour the best programs more strongly (at least 1). | 5 |
+| Initial Tree Depth | How deeply nested the random programs at the start may be (1–12).                                 | 4       |
+| Max Tree Depth     | How deeply nested any program may become (from Initial Tree Depth to 17). This stops programs growing ever larger without fitting better. | 8 |
+| Linear scaling     | Lets every program be stretched and shifted (`a + b·f(x)`) to fit the data, so evolution only has to find the right shape. Leave it on unless you are studying GP without it. | on |
+| Constant optimisation | Experimental: fine-tune the numbers inside a random 10% of programs each generation. It did not improve results in our benchmark (see [How it works](#constant-optimisation-experimental)). | off |
+| Speed              | **Fast:** as many generations as fit in about 40 ms per screen update. **Slow:** one generation per update, about 6 per second, for watching. | Fast |
+| Operators          | The building blocks programs may use.                                                             | `+ - *` |
+
+**Operator presets:** Polynomial (`+ - *`), Rational (adds `/`), Trigonometric (adds `sin cos`), Exp / Log (adds `exp log`) and Everything. Pick the preset that matches the shape of your data; fewer, well-chosen operators usually find a formula faster than Everything.
+
+<details>
+<summary>All 23 operators</summary>
 
 - Binary: `+`, `-`, `*`, `/`, `pow`
 - Unary: `sin`, `cos`, `tan`, `sinh`, `cosh`, `tanh`, `asin`, `acos`, `atan`, `asinh`, `acosh`, `atanh`, `log` (natural log), `log2`, `log10`, `exp`, `sqrt`, `cbrt`
 
-### 3. Run, stop, resume
+The default rates were chosen with the benchmark described under [Example results](#example-results). Crossover 0.8, mutation 0.2 and elitism 0.02 did slightly worse on the harder targets.
 
-| State   | Buttons                                              | Notes                                            |
-| ------- | ---------------------------------------------------- | ------------------------------------------------ |
-| idle    | **Start Evolution**                                  | Settings are editable.                           |
-| running | **Running…** (disabled), **Stop**                    | Settings are locked.                             |
-| paused  | **Clear Results**, **Resume**, **Copy share link**   | Settings are editable; Resume applies changes.   |
+</details>
 
-**Copy share link** appears whenever a best program is shown and no run is going, including in the idle state after you open a share link. Settings are checked when you press **Start Evolution** or **Resume**, and any problems are listed above the buttons.
+### Start, stop and resume
 
-A run pauses on its own when it reaches the target R² or Max Generations, and a status message says which. To keep going after hitting Max Generations, raise it and press **Resume**.
+| State   | Buttons                                              | Settings                                          |
+| ------- | ---------------------------------------------------- | ------------------------------------------------- |
+| idle    | **Start Evolution**                                  | Editable.                                         |
+| running | **Running…** (disabled), **Stop**                    | Locked.                                           |
+| paused  | **Clear Results**, **Resume**, **Copy share link**   | Editable; **Resume** continues with your changes. |
 
-**Clear Results** asks for confirmation, then stops the worker, clears the results, and deletes the stored session and the best-program log (see [Persistence](#persistence)).
+- A run pauses on its own when it reaches the Target R² or Max Generations, and a message says which. To keep going after Max Generations, raise it and press **Resume**.
+- Settings are checked when you press **Start Evolution** or **Resume**; any problems are listed above the buttons.
+- **Clear Results** asks first, then clears the results and the saved run, ready for a new one.
+- **Copy share link** appears whenever a result is shown and no run is going, including after you open a share link.
 
-### 4. Read the results
+### 3. Results: reading them
 
-- **Best program:** the simplified formula. The tabs switch between a plain formula, JavaScript (`const f = (x) => …`), Python (`def f(x): …` using `math`) and LaTeX. With several inputs the function takes them as parameters, for example `(height, width, depth) => …`. **Copy** puts the current tab on the clipboard. The JavaScript and Python exports keep 12 significant digits; the formula and LaTeX tabs, like the on-screen formula, show 5. Python writes powers as `**`, and a program that uses `cbrt` gets a comment that `math.cbrt` needs Python 3.11 or later.
-- **Replay:** after a run (or while paused), **▶ Replay** plays through every improvement of the best program, and the slider jumps to any of them. The formula, export, fit chart and tree all follow the replay; the progress chart marks its generation in blue. **Back to latest** returns to the current best.
-- **Fit:** with one input, the data (cyan) and the best program (red). With several inputs, predicted against actual values for each row; points on the red diagonal are predicted exactly.
-- **Progress:** 1 − R² of the best (red) and median (grey) program in each generation, on a log scale, so the step from R² 0.99 to 0.9999 is as visible as the step from 0 to 0.9. The axis runs from 1 − R² = 1 down to 10⁻⁶, and values outside that range are drawn at the edge. The dashed green line is your target.
-- **Expression tree:** orange operators, green variables, khaki constants. It scales to fit the page.
-- **Program size:** the number of nodes in the program as shown.
-- **Speed:** generations per second, smoothed.
-- **Recent generations:** the best program from each of the last five screen updates, newest first. In Fast mode one update covers many generations.
+- **Best program:** the best formula so far. The tabs show it as a plain formula, JavaScript, Python or LaTeX, and **Copy** puts the current tab on the clipboard. With several inputs, the exported function takes them as parameters, for example `(height, width, depth) => …`.
+- **Replay:** after a run (or while paused), **▶ Replay** plays through every improvement, and the slider jumps to any of them. The formula, export, fit chart and tree all follow the replay, and the progress chart marks its generation in blue. **Back to latest** returns to the current best.
+- **Fit chart:** with one input, the data (cyan dots) and the best program (red curve). With several inputs, each row's predicted value against its actual value; points on the red diagonal are predicted exactly.
+- **Progress chart:** how close the best (red) and the median (grey) program are to a perfect fit in each generation. The scale shows R² 0.9, 0.99, 0.999 … at equal steps, so late, small improvements are as visible as early, large ones. The dashed green line is your Target R².
+- **Expression tree:** the best program as a tree. Each circle is labelled with its operator, variable or number; operators are orange, variables green and numbers khaki.
+- **Program size:** how many circles the tree has.
+- **Speed:** generations per second.
+- **Recent generations:** the best program at each of the last five screen updates, newest first.
 
-### 5. Share a run
+<details>
+<summary>Export details</summary>
 
-After a run, **Copy share link** copies a link to this page that contains the settings, the uploaded dataset (if it has at most 2,000 rows) and the best program. In formula mode the link carries the formula, not the sampled points. If the dataset is larger, the link leaves it out and the recipient is asked to upload it. The link is also shown in a text box below the buttons, so it can be copied by hand if the clipboard is unavailable.
+- The JavaScript and Python exports keep 12 significant digits; the plain formula and LaTeX show 5, like the formula on screen.
+- Python writes powers as `**`, and a program that uses `cbrt` gets a comment that `math.cbrt` needs Python 3.11 or later.
+- In Fast mode one screen update covers many generations, so **Recent generations** skips some.
+- The progress chart's scale stops at R² 0.999999; better fits are drawn on its bottom edge.
 
-Opening a link loads its contents, ready to run. It does not offer to restore the visitor's own saved session, and it leaves that session alone until the visitor starts a run. The population is not included, so the recipient starts a new run rather than continuing yours.
+</details>
 
-### 6. Restore after closing the browser
+### Share a run
 
-On load, if a stored session exists, the app asks (in a browser confirmation dialog) whether to restore it. A restored session comes back paused with its population, generation, best program, recent generations, progress chart, replay timeline, settings and dataset. Press **Resume** to continue. Declining keeps the stored session; it is replaced when the next run saves a checkpoint.
+After a run, **Copy share link** copies a link that opens EquVolve with your settings, your data and the best formula, ready to run. The link is also shown in a box below the buttons, to copy by hand if needed.
+
+- An uploaded dataset is included if it has at most 2,000 rows; otherwise the person you share it with is asked to upload the file.
+- The run's population is not included, so they start a new run rather than continuing yours.
+- Opening a link does not touch the visitor's own saved run until they start a new one.
+
+### Restore after closing the browser
+
+Your run is saved in this browser as it goes. When you come back, EquVolve asks whether to restore your previous run. It comes back paused, with its results, charts, replay, settings and data: press **Resume** to continue. If you say no, the saved run is kept until your next run replaces it. See [Persistence](#persistence) for what is stored.
+
+---
+
+## When a run does not reach the target
+
+Runs are random, and some formulas are hard to find. Stopping at Max Generations is not an error: the best program so far is still shown, and an R² of 0.99 is often already a close fit (check the fit chart). To get closer, try these in order:
+
+1. **Raise Max Generations and press Resume.** The run continues where it stopped. Hard targets can take 1,000 generations or more.
+2. **Choose operators that match the shape of the data:** Trigonometric for waves, Exp / Log for growth, decay or bell curves, Rational for formulas with division. A few fitting operators usually beat Everything.
+3. **Start again** (**Clear Results**, then **Start Evolution**). Every run is different, and a new one may find the formula quickly.
+4. **Increase Population Size**, for example to 500. Each generation is slower, but the search tries more at once.
+5. **Accept a slightly lower Target R²**, for example 0.99, if a close fit is enough.
+
+### Messages
+
+| Message                                                        | What to do                                                                                   |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Stopped at Max Generations (…)                                 | See the list above.                                                                          |
+| Formula is invalid: unknown name "…"                           | Use `x` as the variable, and only maths names such as `sin`, `exp` or `PI`.                   |
+| Formula produces fewer than 2 finite values in the X Range     | Change the X range: for example, `log(x)` and `sqrt(x)` need positive `x`.                    |
+| Target values are constant                                     | The data must vary; a flat line has nothing to fit.                                           |
+| The CSV needs at least two columns of numbers                  | Check that the file has at least two columns of numbers, separated by commas, semicolons or tabs. |
+| Upload a CSV dataset with at least 2 valid rows                | Upload a file, or check its rows: rows with empty cells or text are skipped.                  |
+| Select at least one operator                                   | Tick an operator, or press a preset.                                                         |
+| This share link could not be read                              | The link is probably incomplete; copy it again.                                               |
 
 ---
 
