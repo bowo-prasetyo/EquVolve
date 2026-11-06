@@ -1556,7 +1556,74 @@ const router = VueRouter.createRouter({
   routes
 });
 
-const app = Vue.createApp({});
+// ---------- theme ----------
+// 'auto' follows the device's light/dark setting; 'light' and 'dark' are the
+// visitor's own choice, remembered in this browser. index.html applies a
+// stored choice before the first paint.
+
+const THEME_KEY = 'equvolve-theme';
+const THEME_ORDER = ['auto', 'light', 'dark'];
+const THEME_LABELS = { auto: '🖥️ Auto', light: '☀️ Light', dark: '🌙 Dark' };
+const THEME_TITLES = {
+  auto: 'Theme follows your device. Click for light.',
+  light: 'Light theme. Click for dark.',
+  dark: 'Dark theme. Click to follow your device.'
+};
+
+function readThemePreference() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === 'light' || stored === 'dark' ? stored : 'auto';
+  } catch (e) {
+    return 'auto';
+  }
+}
+
+function applyTheme(preference) {
+  const root = document.documentElement;
+  if (preference === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', preference);
+
+  // Keep the mobile browser's toolbar colour in step with the page.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = getComputedStyle(root).getPropertyValue('--bg').trim();
+}
+
+const app = Vue.createApp({
+  data() {
+    return { themePreference: readThemePreference() };
+  },
+
+  computed: {
+    themeLabel() {
+      return THEME_LABELS[this.themePreference];
+    },
+    themeTitle() {
+      return THEME_TITLES[this.themePreference];
+    }
+  },
+
+  methods: {
+    cycleTheme() {
+      const next = THEME_ORDER[(THEME_ORDER.indexOf(this.themePreference) + 1) % THEME_ORDER.length];
+      this.themePreference = next;
+      try {
+        if (next === 'auto') localStorage.removeItem(THEME_KEY);
+        else localStorage.setItem(THEME_KEY, next);
+      } catch (e) {
+        // Storage can be blocked; the choice then lasts until the page closes.
+      }
+      applyTheme(next);
+    }
+  },
+
+  mounted() {
+    applyTheme(this.themePreference);
+    // In auto mode, follow the device when it switches between light and dark.
+    window.matchMedia('(prefers-color-scheme: light)')
+      .addEventListener('change', () => applyTheme(this.themePreference));
+  }
+});
 
 app.use(router);
 

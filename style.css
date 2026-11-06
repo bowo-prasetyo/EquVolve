@@ -1,3 +1,7 @@
+/* ---------- themes ----------
+   Dark is the default. Light applies when the device prefers it, unless the
+   visitor picked a theme with the toggle (data-theme on <html>). */
+
 :root {
   --bg: #111;
   --panel: #1a1a1a;
@@ -6,6 +10,94 @@
   --muted: #aaa;
   --code-bg: #222;
   --accent: #f0a030;
+  --accent-fill: #f0a030;
+  --accent-fill-hover: #ffb84a;
+  --on-accent: #111;
+  --nav-bg: #222;
+  --nav-border: #222;
+  --nav-text: #fff;
+  --link: #8cf;
+  --button-bg: #2b2b2b;
+  --button-border: #666;
+  --button-hover: #3a3a3a;
+  --canvas-border: #555;
+  --tree-edge: #ccc;
+  --error-border: #e55;
+  --error-text: #fbb;
+  --status-border: #5a5;
+  --status-text: #cfc;
+  --key-cyan: #00b7c7;
+  --key-red: #ff5a5a;
+  --key-grey: #bbb;
+  --key-green: #4c4;
+  --key-blue: #6b9bff;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f6f3;
+    --panel: #fff;
+    --border: #d8d8d4;
+    --text: #1b1b1b;
+    --muted: #5f5f5f;
+    --code-bg: #efefeb;
+    --accent: #a35f00;
+    --accent-fill: #f0a030;
+    --accent-fill-hover: #e2921f;
+    --on-accent: #111;
+    --nav-bg: #fff;
+    --nav-border: #d8d8d4;
+    --nav-text: #1b1b1b;
+    --link: #0a5fc2;
+    --button-bg: #f3f3f0;
+    --button-border: #bdbdb8;
+    --button-hover: #e6e6e2;
+    --canvas-border: #cfcfca;
+    --tree-edge: #8a8a8a;
+    --error-border: #d33;
+    --error-text: #a11d1d;
+    --status-border: #3a8f3a;
+    --status-text: #1d5e1d;
+    --key-cyan: #00808c;
+    --key-red: #d32f2f;
+    --key-grey: #666;
+    --key-green: #2a8a2a;
+    --key-blue: #2f5fd0;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f6f3;
+  --panel: #fff;
+  --border: #d8d8d4;
+  --text: #1b1b1b;
+  --muted: #5f5f5f;
+  --code-bg: #efefeb;
+  --accent: #a35f00;
+  --accent-fill: #f0a030;
+  --accent-fill-hover: #e2921f;
+  --on-accent: #111;
+  --nav-bg: #fff;
+  --nav-border: #d8d8d4;
+  --nav-text: #1b1b1b;
+  --link: #0a5fc2;
+  --button-bg: #f3f3f0;
+  --button-border: #bdbdb8;
+  --button-hover: #e6e6e2;
+  --canvas-border: #cfcfca;
+  --tree-edge: #8a8a8a;
+  --error-border: #d33;
+  --error-text: #a11d1d;
+  --status-border: #3a8f3a;
+  --status-text: #1d5e1d;
+  --key-cyan: #00808c;
+  --key-red: #d32f2f;
+  --key-grey: #666;
+  --key-green: #2a8a2a;
+  --key-blue: #2f5fd0;
+  color-scheme: light;
 }
 
 * {
@@ -21,18 +113,25 @@ body {
 }
 
 nav {
-  background: #222;
-  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--nav-border);
+  padding: 8px 12px;
 }
 
 nav a {
-  color: #fff;
-  margin-right: 15px;
+  color: var(--nav-text);
   text-decoration: none;
 }
 
+.theme-toggle {
+  margin-left: auto;
+}
+
 a {
-  color: #8cf;
+  color: var(--link);
 }
 
 .container {
@@ -184,15 +283,15 @@ legend {
 
 button {
   padding: 10px 14px;
-  border: 1px solid #666;
+  border: 1px solid var(--button-border);
   border-radius: 6px;
-  background: #2b2b2b;
+  background: var(--button-bg);
   color: var(--text);
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
-  background: #3a3a3a;
+  background: var(--button-hover);
 }
 
 button:disabled {
@@ -201,14 +300,14 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #111;
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
   font-weight: bold;
 }
 
 button.primary:hover:not(:disabled) {
-  background: #ffb84a;
+  background: var(--accent-fill-hover);
 }
 
 button.small {
@@ -310,7 +409,7 @@ canvas {
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid #555;
+  border: 1px solid var(--canvas-border);
   background: #fff;
 }
 
@@ -323,7 +422,7 @@ svg.tree {
 }
 
 svg.tree .edge {
-  stroke: #ccc;
+  stroke: var(--tree-edge);
 }
 
 svg.tree text {
@@ -333,14 +432,14 @@ svg.tree text {
 
 .error {
   margin-bottom: 12px;
-  border-left: 4px solid #e55;
-  color: #fbb;
+  border-left: 4px solid var(--error-border);
+  color: var(--error-text);
 }
 
 .status {
   margin-bottom: 12px;
-  border-left: 4px solid #5a5;
-  color: #cfc;
+  border-left: 4px solid var(--status-border);
+  color: var(--status-text);
 }
 
 .about {
@@ -369,12 +468,11 @@ svg.tree text {
   margin-right: 6px;
 }
 
-.key.cyan { color: #00b7c7; }
-.key.red { color: #ff5a5a; }
-.key.grey { color: #bbb; }
-.key.green { color: #4c4; }
-
-.key.blue { color: #6b9bff; }
+.key.cyan { color: var(--key-cyan); }
+.key.red { color: var(--key-red); }
+.key.grey { color: var(--key-grey); }
+.key.green { color: var(--key-green); }
+.key.blue { color: var(--key-blue); }
 
 select {
   font: inherit;
@@ -396,5 +494,5 @@ select {
 }
 
 .expression.replaying {
-  border-left: 4px solid #6b9bff;
+  border-left: 4px solid var(--key-blue);
 }
