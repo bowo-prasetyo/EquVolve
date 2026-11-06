@@ -95,7 +95,7 @@ test('share links carry multi-variable data and reject models with unknown varia
 test('normalizeConfig: formula mode always uses x; new settings get defaults', () => {
   const c = s.normalizeConfig({ dataMode: 'formula', variables: ['a', 'b'] });
   assert.deepEqual(c.variables, ['x']);
-  assert.equal(c.constantOptimization, true);
+  assert.equal(c.constantOptimization, false);
   assert.deepEqual(s.normalizeConfig({ dataMode: 'dataset', variables: ['a', 'b'] }).variables, ['a', 'b']);
 });
 

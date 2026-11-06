@@ -52,7 +52,7 @@ const DEFAULTS = {
   treeDepth: 4,
   maxTreeDepth: 8,
   linearScaling: true,
-  constantOptimization: true,
+  constantOptimization: false,
   speed: 'fast',
   dataMode: 'formula',
   variables: ['x'],
@@ -176,7 +176,8 @@ const Home = {
               Constant optimisation
             </span>
             <span class="hint">
-              Each generation, fine-tune the numbers inside the best few programs (such as the 1/3 in exp(x/3)).
+              Each generation, fine-tune the numbers inside a random 10% of programs (such as the 1/3 in exp(x/3)).
+              Experimental and off by default: in our benchmark it did not improve results.
             </span>
           </label>
 

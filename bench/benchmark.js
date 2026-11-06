@@ -3,6 +3,8 @@
 //
 //   npm run bench            # 20 runs per target
 //   node bench/benchmark.js 5
+//   node bench/benchmark.js 20 3   # only target #3 (0-based), e.g. to
+//                                  # run targets in parallel
 //
 // Uses the real worker.js (via test/helpers.js) and the app's default
 // settings, so results reflect what users get.
@@ -37,10 +39,14 @@ const SETTINGS = {
   linearScaling: true
 };
 
-console.log(`| Target | Operators | Reached R² ≥ 0.999 | Median generations (when reached) | Example result |`);
-console.log(`| --- | --- | --- | --- | --- |`);
+if (process.argv[3] === undefined) {
+  console.log(`| Target | Operators | Reached R² ≥ 0.999 | Median generations (when reached) | Example result |`);
+  console.log(`| --- | --- | --- | --- | --- |`);
+}
 
-for (const [formula, operators] of TARGETS) {
+const only = process.argv[3] !== undefined ? [TARGETS[Number(process.argv[3])]] : TARGETS;
+
+for (const [formula, operators] of only) {
   const reached = [];
   let example = null;
 

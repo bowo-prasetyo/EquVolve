@@ -1058,8 +1058,9 @@ function normalizeConfig(config) {
     c.linearScaling = true;
   }
 
+  // off by default: in benchmarks it did not improve results
   if (typeof c.constantOptimization !== 'boolean') {
-    c.constantOptimization = true;
+    c.constantOptimization = false;
   }
 
   // formula mode always has the single variable x

@@ -116,11 +116,20 @@ test('constant optimisation never makes a program worse and leaves constant-free
   assert.ok(w.context.fitness(opt).totalFitness <= w.context.fitness(t2).totalFitness);
 });
 
-test('with constant optimisation off, runs still work', () => {
+test('with constant optimisation on, runs work and trees stay valid', () => {
   const w = loadWorker();
-  w.send({ type: 'start', config: baseConfig({ constantOptimization: false, targetR2: 0.99 }) });
+  w.send({ type: 'start', config: baseConfig({ constantOptimization: true, targetR2: 0.99 }) });
   w.tick(200);
   assert.equal(w.finished()[0].reason, 'targetReached');
+  for (const m of w.results().filter(r => r.population)) {
+    assert.ok(m.population.every(t => shared.isValidTree(t)));
+  }
+});
+
+test('constant optimisation is off unless enabled', () => {
+  const w = loadWorker();
+  w.send({ type: 'restore', state: { generation: 0, population: [], config: baseConfig() } });
+  assert.equal(w.read('constantOptimization'), false);
 });
 
 // ---------- multi-variable ----------

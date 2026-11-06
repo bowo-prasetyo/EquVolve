@@ -19,10 +19,13 @@ const SPEEDS = {
 // every POPULATION_EVERY generations (and on stop and finish).
 const POPULATION_EVERY = 10;
 
-// Constant optimisation: a short (1+1) evolution strategy on the
-// constants of the best few programs every generation.
-const CONSTANT_OPT_PROGRAMS = 3;
-const CONSTANT_OPT_STEPS = 20;
+// Constant optimisation (opt-in): each generation, a random 10% of the
+// population gets a short (1+1) evolution strategy on its constants.
+// Benchmarked alternatives that polish the best 1-3 programs instead
+// were clearly worse: the polished leaders take over the population.
+const CONSTANT_OPT_RATE = 0.1;
+const CONSTANT_OPT_STEPS = 10;
+const CONSTANT_OPT_PROGRAMS = 3; // for mode 'top
 
 // Koza's rule: pick an internal node as a crossover point 90% of the
 // time, so crossover moves meaningful structure instead of leaves.
@@ -55,14 +58,16 @@ let tournamentSize = 5;
 let initDepth = 4;   // depth of randomly generated trees
 let maxDepth = 8;    // hard limit for evolved trees
 let linearScaling = true;
-let constantOptimization = true;
+let constantOptimization = false;
 let variables = ['x'];
 let dataMode = 'formula';
 let dataset = [];
 let batchMs = SPEEDS.fast.batchMs;
 let delayMs = SPEEDS.fast.delayMs;
 let populationEvery = POPULATION_EVERY;
-let constOpt = { mode: 'top', programs: CONSTANT_OPT_PROGRAMS, steps: CONSTANT_OPT_STEPS, rate: 0.1 };
+// mode 'random' (default) or 'top' (the best `programs`); kept
+// configurable for benchmarking
+let constOpt = { mode: 'random', programs: CONSTANT_OPT_PROGRAMS, steps: CONSTANT_OPT_STEPS, rate: CONSTANT_OPT_RATE };
 
 // Training points, computed once per config (not once per evaluation).
 let points = [];
@@ -493,8 +498,8 @@ function optimizeConstants(tree, steps) {
   return holder.root;
 }
 
-// Optimise the constants of the best few distinct programs in place
-// (Lamarckian: the improved constants are inherited).
+// Optimise constants in place (Lamarckian: the improved constants are
+// inherited): a random share of the population, or the best few.
 function optimizeTopConstants() {
   const seen = new Set();
   let done = 0;
