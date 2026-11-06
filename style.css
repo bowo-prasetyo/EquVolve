@@ -127,8 +127,9 @@ body {
 
 nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 15px;
+  gap: 8px 15px;
   background: var(--nav-bg);
   border-bottom: 1px solid var(--nav-border);
   padding: 8px 12px;
@@ -139,8 +140,18 @@ nav a {
   text-decoration: none;
 }
 
-.theme-toggle {
+/* the language and theme controls, kept together at the end of the top
+   bar (on a narrow phone, together on a line of their own) */
+.nav-end {
   margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.language-select {
+  padding: 4px 6px;
+  font-size: 0.9em;
 }
 
 a {

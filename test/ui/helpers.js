@@ -10,14 +10,21 @@ const { startServer } = require('./server');
 // The About page fetches the README from GitHub's main branch. Tests
 // answer with this checkout's README instead, so they check the README
 // being changed and do not depend on what is merged.
+// Every language's README is answered the same way (README.md,
+// README.id.md, ...); one that does not exist here is a 404, as on GitHub.
 const README_URL = 'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/README.md';
-const LOCAL_README = path.join(__dirname, '..', '..', 'README.md');
+const README_URLS = 'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/README*.md';
+const ROOT_DIR = path.join(__dirname, '..', '..');
 
 function serveLocalReadme(route) {
+  const file = path.join(ROOT_DIR, path.basename(new URL(route.request().url()).pathname));
+
+  if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '404: Not Found' });
+
   return route.fulfill({
     status: 200,
     contentType: 'text/plain; charset=utf-8',
-    body: fs.readFileSync(LOCAL_README, 'utf8')
+    body: fs.readFileSync(file, 'utf8')
   });
 }
 
@@ -71,7 +78,7 @@ async function openApp(t, options = {}) {
     });
   }
 
-  await context.route(README_URL, options.readme || serveLocalReadme);
+  await context.route(README_URLS, options.readme || serveLocalReadme);
 
   const page = await context.newPage();
   const errors = [];
