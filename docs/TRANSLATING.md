@@ -26,7 +26,9 @@ Each file is a flat JSON object of keys and messages:
 "status.targetReached": "Target R² reached at generation {generation}."
 ```
 
-A placeholder that receives a list (such as `{names}` or `{ops}`) is written out by the app in your language's own way, such as "sin, exp and log" in English.
+A placeholder that receives a list (such as `{names}` or `{ops}`) is written out by the app in your language's own way, such as "sin, exp and log" in English. Numbers, in placeholders and as `#` in plurals, are written your language's way too (1,234.5 in English, 1.234,5 in German), so never format them in the message. Formulas, code and exports always keep a decimal point.
+
+In a right-to-left language each value filled into a placeholder is isolated from the text around it, so a file name, formula or number keeps its own direction and the sentence keeps yours. Formulas, code, charts and the expression tree are always shown left to right.
 
 ### Plurals
 
@@ -70,19 +72,26 @@ No other markup is allowed; the tests reject it.
 ## Trying your translation
 
 1. Copy `locales/en.json` to `locales/<code>.json`, where `<code>` is a [BCP 47 language tag](https://www.w3.org/International/articles/language-tags/) such as `de`, `pt-BR` or `zh-Hans`, and translate the messages.
-2. Register the language in `LOCALES` at the top of [`i18n.js`](../i18n.js): its name in its own language, the locale used for number and list formatting (`intl`), and `dir: 'rtl'` for languages written right to left.
+2. Register the language in `LOCALES` at the top of [`i18n.js`](../i18n.js): its name in its own language, the locale used for plural, list and number formatting (`intl`, for example `ar-EG` for Arabic digits or `ar` for Western ones), and `dir: 'rtl'` for languages written right to left.
 3. Serve the folder (`python3 -m http.server 8000`) and open `http://localhost:8000/?lang=<code>#/`. Without `?lang=`, the app follows the browser's language.
 4. Run `npm test`: it checks that every message is valid and keeps the English placeholders and markup.
 
-## The pseudo-locale (for developers)
+## The pseudo-locales (for developers)
 
-`?lang=en-XA` shows the app in a generated test language: English with accented letters, about 30% longer and wrapped in `⟦ ⟧`. Text that appears in plain English there was missed; text that is cut off or overlaps will be in longer languages too; and a sentence split into several `⟦ ⟧` pieces was assembled from fragments and cannot be translated well. The browser test `test/ui/i18n.test.js` runs the main screens in it and fails on any plain English it finds.
+Two generated test languages show what a real translation would run into, before there is one:
+
+- `?lang=en-XA`: English with accented letters, about 30% longer and wrapped in `⟦ ⟧`, with numbers written the German way (`0,999`, `1.234`). Text in plain English there was missed; text that is cut off or overlaps will be in longer languages too; a sentence split into several `⟦ ⟧` pieces was assembled from fragments and cannot be translated well; and a number with a decimal point outside a formula was not localized.
+- `?lang=ar-XB`: the page laid out right to left, with every message's words forced to run right to left (so they read backwards), as in Android's pseudo-bidi locale. The layout should mirror; formulas, code, charts, the tree and number inputs should not; and text that reads forwards did not come from a message.
+
+The browser tests in `test/ui/i18n.test.js` run the main screens in both: they fail on plain English in the page or drawn on the charts, on unlocalized numbers, on a layout that does not mirror, and on a page that scrolls sideways on a 320 px phone.
 
 ## Adding or changing text (for developers)
 
 - Add the English message to `locales/en.json` and show it with `t('key', params)` in code, or `$t('key', params)` in a template. A message with markup is shown with `v-html="$th('key', params)"`, which escapes every parameter, so a file or column name can never inject markup. In `shared.js`, use `msg('key', params)`.
 - Write whole sentences with placeholders, never sentences glued from pieces: word order differs between languages. Use `plural` for anything counted, never `count === 1 ? … : …`. Pass arrays for lists rather than joining them yourself.
+- Show numbers that are values (not code) with `I18n.number(value, options)` in code or `$n(value, options)` in templates, or pass them as numbers to a message. Never `toFixed()` or `String()` a number the user reads.
 - Write keys in full, in single quotes (`t('run.start')`, `labelKey: 'setting.maxGenerations.label'`), never built from parts: `npm test` finds unused and missing keys by looking for them in the code.
+- Give anything that must read left to right in every language (formulas, URLs, number inputs, charts) `dir="ltr"`, and use logical CSS properties (`margin-inline-start`, `text-align: end`), never `left` and `right`.
 - Mark text that must never be translated, such as names and code, with `translate="no"`. The pseudo-locale test skips it, and so does browser auto-translate.
 - Data never holds words: the CSV parser's skip reasons and formula errors are codes, put into words where they are shown.
 - When you change the meaning of an English message, give it a new key, so translations of the old meaning are not shown for the new one.

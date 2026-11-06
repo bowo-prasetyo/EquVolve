@@ -140,7 +140,7 @@ nav a {
 }
 
 .theme-toggle {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 a {
@@ -228,6 +228,11 @@ details.advanced[open] summary::before {
   content: "▾";
 }
 
+/* in a right-to-left page the closed triangle points the other way */
+[dir="rtl"] details.advanced:not([open]) summary::before {
+  content: "◂";
+}
+
 details.advanced summary::-webkit-details-marker {
   display: none;
 }
@@ -295,7 +300,7 @@ p.field-error {
 }
 
 label.inline {
-  margin-right: 12px;
+  margin-inline-end: 12px;
   white-space: nowrap;
 }
 
@@ -447,7 +452,7 @@ button.active {
 
 .run-message.error ul {
   margin: 0;
-  padding-left: 20px;
+  padding-inline-start: 20px;
 }
 
 .run-message.error a {
@@ -460,7 +465,7 @@ button.active {
 }
 
 .run-message.note {
-  border-left: 4px solid var(--accent);
+  border-inline-start: 4px solid var(--accent);
 }
 
 .resume-hint {
@@ -576,7 +581,7 @@ button.active {
   margin: 20px 0;
   padding: 12px 15px;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
+  border-inline-start: 4px solid var(--accent);
   border-radius: 8px;
   background: var(--panel);
 }
@@ -613,7 +618,7 @@ table.preview {
 
 table.preview caption {
   caption-side: top;
-  text-align: left;
+  text-align: start;
   color: var(--muted);
   font-size: 0.9em;
   padding: 4px 0;
@@ -623,7 +628,7 @@ table.preview th,
 table.preview td {
   border: 1px solid var(--border);
   padding: 3px 10px;
-  text-align: right;
+  text-align: end;
 }
 
 table.preview .target {
@@ -682,12 +687,12 @@ svg.tree text {
 }
 
 .error {
-  border-left: 4px solid var(--error-border);
+  border-inline-start: 4px solid var(--error-border);
   color: var(--error-text);
 }
 
 .status {
-  border-left: 4px solid var(--status-border);
+  border-inline-start: 4px solid var(--status-border);
   color: var(--status-text);
 }
 
@@ -714,7 +719,7 @@ svg.tree text {
 
 .key {
   font-weight: bold;
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 
 .key.cyan { color: var(--key-cyan); }
@@ -743,7 +748,7 @@ select {
 }
 
 .expression.replaying {
-  border-left: 4px solid var(--key-blue);
+  border-inline-start: 4px solid var(--key-blue);
 }
 
 /* ---------- touch screens and phones ----------
@@ -773,7 +778,7 @@ select {
     align-items: center;
     gap: 8px;
     min-height: 44px;
-    margin-right: 6px;
+    margin-inline-end: 6px;
     padding: 0 6px;
   }
 
@@ -811,4 +816,42 @@ select {
   .run-message.error li {
     padding: 4px 0;
   }
+}
+
+/* ---------- writing direction ----------
+   Formulas, code, URLs, charts, the tree and numbers being typed read
+   left to right in every language, including right-to-left ones such as
+   Arabic and Hebrew (otherwise -5 shows as 5-). Inline code keeps its
+   own direction inside the sentence around it. */
+code {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+pre,
+.code,
+svg.tree,
+input[type="number"] {
+  direction: ltr;
+  text-align: left;
+}
+
+/* Long words (German compounds, file names) wrap instead of pushing the
+   page wider than the screen; the page's lang lets the browser hyphenate. */
+body {
+  overflow-wrap: break-word;
+}
+
+.hint,
+.field-label,
+label,
+button {
+  hyphens: auto;
+}
+
+/* the file picker's own width (about 300 px) would make a small phone
+   scroll sideways; let it shrink to the space it has */
+input[type="file"] {
+  max-width: 100%;
+  min-width: 0;
 }

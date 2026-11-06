@@ -13,13 +13,17 @@
 
 (function (root) {
   // The languages the interface can be shown in. `intl` is the locale
-  // used for Intl formatting (plurals, lists, relative times): EquVolve's
-  // English is British English ("a, b and c", no serial comma). `pseudo`
-  // marks a generated test language: English with accents and extra
-  // length, to find text that is not translatable yet (see pseudoLocalize).
+  // used for Intl formatting (plurals, lists, relative times, numbers):
+  // EquVolve's English is British English ("a, b and c", no serial
+  // comma). `numbers`, if set, is used for numbers instead. `pseudo`
+  // marks a generated test language made from English (see
+  // pseudoLocalize): en-XA is accented and longer, and writes numbers the
+  // German way (0,5 and 1.234) so a number that is not localized stands
+  // out; ar-XB reads right to left, to check the mirrored layout.
   const LOCALES = {
     en: { name: 'English', intl: 'en-GB', dir: 'ltr' },
-    'en-XA': { name: 'Pseudo-English', intl: 'en-GB', dir: 'ltr', pseudo: 'en' }
+    'en-XA': { name: 'Pseudo-English', intl: 'en-GB', numbers: 'de-DE', dir: 'ltr', pseudo: 'en', transform: 'accents' },
+    'ar-XB': { name: 'Pseudo-Bidi', intl: 'en-GB', dir: 'rtl', pseudo: 'en', transform: 'bidi' }
   };
 
   const DEFAULT_LOCALE = 'en';
@@ -162,6 +166,7 @@
 
   const pluralRules = new Map();
   const listFormats = new Map();
+  const numberFormats = new Map();
 
   function intlLocale(locale = current) {
     return (LOCALES[locale] && LOCALES[locale].intl) || locale;
@@ -173,15 +178,34 @@
     return pluralRules.get(tag).select(n);
   }
 
+  function numberLocale(locale = current) {
+    return (LOCALES[locale] && LOCALES[locale].numbers) || intlLocale(locale);
+  }
+
+  // A number written the way the language writes it: 1,234.5 in English,
+  // 1.234,5 in German, ١٬٢٣٤٫٥ in Egyptian Arabic. All its digits are
+  // kept unless `options` (Intl.NumberFormat options) say otherwise.
+  // Only for numbers shown as values: formulas, exports and anything the
+  // user may copy into code keep a decimal point.
+  function number(value, options = {}, locale = current) {
+    const tag = numberLocale(locale);
+    const key = `${tag}|${JSON.stringify(options)}`;
+    if (!numberFormats.has(key)) {
+      numberFormats.set(key, new Intl.NumberFormat(tag, { maximumFractionDigits: 20, ...options }));
+    }
+    return numberFormats.get(key).format(value);
+  }
+
   // Items as a list in the current language: "a, b and c" (conjunction)
   // or "a, b, c" (unit, for lists that are not part of a sentence).
+  // Numbers in it are localized.
   function list(items, type = 'conjunction') {
     const tag = intlLocale();
     const key = `${tag}|${type}`;
     if (!listFormats.has(key)) {
       listFormats.set(key, new Intl.ListFormat(tag, { type, style: type === 'unit' ? 'short' : 'long' }));
     }
-    return listFormats.get(key).format(items.map(String));
+    return listFormats.get(key).format(items.map(v => (typeof v === 'number' ? number(v) : String(v))));
   }
 
   // A value that html() inserts as it is, without escaping: only for
@@ -197,6 +221,11 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+  // In a right-to-left language each filled-in value is wrapped in
+  // Unicode isolates (FSI … PDI), so a file name, a formula or a number
+  // keeps its own direction and does not reorder the sentence around it.
+  const isolate = (text, locale) => (direction(locale) === 'rtl' ? `\u2068${text}\u2069` : text);
+
   function render(parts, params, locale, escape, pound) {
     let out = '';
 
@@ -204,9 +233,9 @@
       if (typeof part === 'string') {
         out += part;
       } else if (part.pound) {
-        out += escape(pound);
+        out += isolate(escape(number(pound, {}, locale)), locale);
       } else if (!part.type) {
-        out += value(params[part.arg], escape);
+        out += isolate(value(params[part.arg], escape, locale), locale);
       } else if (part.type === 'plural') {
         const n = Number(params[part.arg]);
         const branch = part.options[`=${n}`] || part.options[pluralCategory(n, locale)] || part.options.other;
@@ -220,10 +249,11 @@
     return out;
   }
 
-  function value(v, escape) {
+  function value(v, escape, locale) {
     if (v == null) return '';
     if (v instanceof Raw) return v.html;
     if (Array.isArray(v)) return escape(list(v));
+    if (typeof v === 'number') return escape(number(v, {}, locale));
     return escape(v);
   }
 
@@ -272,14 +302,24 @@
     N: 'Ñ', O: 'Ó', P: 'Þ', Q: 'Ǫ', R: 'Ŕ', S: 'Š', T: 'Ţ', U: 'Ú', V: 'Ṽ', W: 'Ŵ', X: 'Ẋ', Y: 'Ý', Z: 'Ž'
   };
 
-  // English made to look translated: letters accented, about 30% longer
-  // and wrapped in ⟦ ⟧, so missed text, clipped text and joined-up
-  // sentence fragments stand out. Placeholders, plural and select syntax,
-  // HTML tags and anything inside <code> are left as they are.
-  function pseudoLocalize(message) {
+  // English made to look translated. With `transform` 'accents' (en-XA):
+  // letters accented, about 30% longer and wrapped in ⟦ ⟧, so missed
+  // text, clipped text and joined-up sentence fragments stand out. With
+  // 'bidi' (ar-XB): each run of words forced right to left with
+  // RLO … PDF, as Android's pseudo-bidi locale does, so the text reads
+  // backwards in a right-to-left page and any text not from a message
+  // reads normally. Placeholders, plural and select syntax, HTML tags and
+  // anything inside <code> are left as they are.
+  function pseudoLocalize(message, transform = 'accents') {
+    return transform === 'bidi' ? pseudoBidi(message) : pseudoAccents(message);
+  }
+
+  // Walk the translatable text of a message: `text(ch)` is called for
+  // each character of message text and its result kept; syntax, tags and
+  // <code> are copied. `flush()` is called before anything copied.
+  function mapText(message, text, flush = () => '') {
     let out = '';
     let depth = 0; // odd inside {argument syntax}, even in message text
-    let letters = 0;
 
     for (let i = 0; i < message.length; i++) {
       const ch = message[i];
@@ -296,18 +336,44 @@
           if (close >= 0) stop = close + '</code>'.length - 1;
         }
 
-        out += message.slice(i, stop + 1);
+        out += flush() + message.slice(i, stop + 1);
         i = stop;
         continue;
       }
 
-      if (depth % 2 === 0 && ACCENTS[ch]) {
-        out += ACCENTS[ch];
-        letters++;
-      } else {
-        out += ch;
-      }
+      out += depth % 2 === 0 && ch !== '{' && ch !== '}' && ch !== '#' ? text(ch) : flush() + ch;
     }
+
+    return out + flush();
+  }
+
+  function pseudoBidi(message) {
+    let open = false;
+    const flush = () => {
+      if (!open) return '';
+      open = false;
+      return '\u202C';
+    };
+
+    return mapText(message, (ch) => {
+      // letters, accents and superscripts such as the ² of R²
+      if (/[\p{L}\p{M}\p{No}]/u.test(ch)) {
+        const start = open ? '' : '\u202E';
+        open = true;
+        return start + ch;
+      }
+      // spaces inside a run of words stay in it; other characters end it
+      return ch === ' ' && open ? ch : flush() + ch;
+    }, flush);
+  }
+
+  function pseudoAccents(message) {
+    let letters = 0;
+    const out = mapText(message, (ch) => {
+      if (!ACCENTS[ch]) return ch;
+      letters++;
+      return ACCENTS[ch];
+    });
 
     const padding = '·'.repeat(Math.ceil(letters * 0.3));
     return `⟦${out}${padding ? ` ${padding}` : ''}⟧`;
@@ -376,7 +442,7 @@
 
     try {
       if (!catalogs[source]) setMessages(source, await fetchCatalog(source));
-      if (source !== locale) setMessages(locale, pseudoCatalog(catalogs[source]));
+      if (source !== locale) setMessages(locale, pseudoCatalog(catalogs[source], LOCALES[locale].transform));
       setLocale(locale);
     } catch (e) {
       console.error(e);
@@ -391,9 +457,9 @@
     return current;
   }
 
-  function pseudoCatalog(messages) {
+  function pseudoCatalog(messages, transform) {
     const out = {};
-    for (const [key, message] of Object.entries(messages)) out[key] = pseudoLocalize(message);
+    for (const [key, message] of Object.entries(messages)) out[key] = pseudoLocalize(message, transform);
     return out;
   }
 
@@ -421,6 +487,8 @@
     html,
     raw,
     list,
+    number,
+    numberLocale,
     format,
     parse,
     escapeHtml,

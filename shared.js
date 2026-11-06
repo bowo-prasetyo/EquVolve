@@ -5,10 +5,19 @@
 // The text of message `key` in the interface's language (see i18n.js,
 // which the page loads first; in Node it is required). Only the page's
 // helpers below call it: the worker never shows text.
-function msg(key, params) {
+function i18n() {
   // eslint-disable-next-line no-undef
-  const i18n = typeof I18n !== 'undefined' ? I18n : require('./i18n.js');
-  return i18n.t(key, params);
+  return typeof I18n !== 'undefined' ? I18n : require('./i18n.js');
+}
+
+function msg(key, params) {
+  return i18n().t(key, params);
+}
+
+// A number as the interface's language writes it (see I18n.number), for
+// labels on the page. Formulas and exports never use it.
+function localNumber(value, options) {
+  return i18n().number(value, options);
 }
 
 const OP_ARITY = {
@@ -1653,7 +1662,8 @@ function progressGrid(minLog = PROGRESS_MIN_LOG) {
 
   for (let k = 0; k >= minLog; k--) {
     const r2 = 1 - Math.pow(10, k);
-    lines.push({ r2, label: `R² ${k === 0 ? '0' : r2.toFixed(-k)}` });
+    const digits = { minimumFractionDigits: -k, maximumFractionDigits: -k };
+    lines.push({ r2, label: `R² ${localNumber(k === 0 ? 0 : r2, digits)}` });
   }
 
   return lines;
@@ -1691,11 +1701,19 @@ function niceTicks(min, max, maxCount = 6) {
   return ticks;
 }
 
-// A tick label: short, with no floating-point noise.
+// A tick label: short, with no floating-point noise, in the interface's
+// way of writing numbers but without thousands separators, which would
+// crowd the axis (1000, 1.2e5, and 0,5 in German).
 function formatTick(value) {
   const a = Math.abs(value);
-  if (a !== 0 && (a >= 1e5 || a < 1e-3)) return value.toExponential(1).replace('e+', 'e');
-  return String(Number(value.toPrecision(6)));
+
+  if (a !== 0 && (a >= 1e5 || a < 1e-3)) {
+    const [mantissa, exponent] = value.toExponential(1).split('e');
+    const digits = { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false };
+    return `${localNumber(Number(mantissa), digits)}e${Number(exponent)}`;
+  }
+
+  return localNumber(Number(value.toPrecision(6)), { useGrouping: false });
 }
 
 // [min, max] widened by `fraction` of its span on both sides, so points

@@ -112,3 +112,66 @@ test('right-to-left languages are recognised for <html dir>', () => {
   assert.equal(I18n.direction('ar'), 'rtl');
   assert.equal(I18n.direction('he-IL'), 'rtl');
 });
+
+// =========================================================
+// NUMBERS AND WRITING DIRECTION (Phase 2)
+// =========================================================
+
+// Run `fn` with the interface in a pseudo-locale, then back in English.
+function inLocale(locale, fn) {
+  const en = require('../locales/en.json');
+  I18n.setMessages(locale, I18n.pseudoCatalog(en, I18n.LOCALES[locale].transform));
+  I18n.setLocale(locale);
+  try {
+    return fn();
+  } finally {
+    I18n.setLocale('en');
+  }
+}
+
+test('numbers are written the language\'s way, keeping every digit', () => {
+  assert.equal(I18n.number(1234.5), '1,234.5');
+  assert.equal(I18n.number(0.1 + 0.2), '0.30000000000000004', 'no digits lost by default');
+  assert.equal(I18n.number(0.9999996, { minimumFractionDigits: 6, maximumFractionDigits: 6 }), '1.000000');
+  assert.equal(I18n.number(1234.5, {}, 'de'), '1.234,5');
+  assert.equal(I18n.number(12.5, {}, 'ar-EG'), '١٢٫٥');
+
+  // en-XA writes numbers the German way, so an unlocalized one stands out
+  inLocale('en-XA', () => assert.equal(I18n.number(1234.5), '1.234,5'));
+});
+
+test('numbers in messages, lists and plurals are localized', () => {
+  assert.equal(I18n.t('status.targetReached', { generation: 1234 }), 'Target R² reached at generation 1,234.');
+  assert.equal(I18n.t('replay.improvements', { count: 1500 }), '1,500 improvements');
+  assert.equal(I18n.list([1000, 2]), '1,000 and 2');
+
+  inLocale('en-XA', () => {
+    assert.match(I18n.t('replay.improvements', { count: 1500 }), /^⟦1\.500 /);
+    assert.match(I18n.t('csv.skipped.group', { count: 2, lines: [1000, 2000], reason: 'x' }), /1\.000 .+ 2\.000/);
+  });
+});
+
+test('in a right-to-left language each value keeps its own direction', () => {
+  const FSI = '⁨';
+  const PDI = '⁩';
+
+  inLocale('ar-XB', () => {
+    assert.equal(I18n.direction(), 'rtl');
+    const text = I18n.t('csv.loaded', { file: 'data-2026.csv', count: 3 });
+    assert.ok(text.includes(`${FSI}data-2026.csv${PDI}`), text);
+    assert.ok(text.includes(`${FSI}3${PDI}`), text);
+  });
+
+  // left-to-right languages get no invisible characters
+  assert.equal(I18n.t('csv.loaded', { file: 'a.csv', count: 3 }), 'Loaded a.csv: 3 rows');
+});
+
+test('the pseudo-bidi locale forces words right to left and leaves syntax alone', () => {
+  const RLO = '‮';
+  const PDF = '‬';
+  const p = I18n.pseudoLocalize('Uses <code>x</code> and {n, plural, one {# row} other {# rows}}.', 'bidi');
+
+  assert.equal(p, `${RLO}Uses ${PDF}<code>x</code> ${RLO}and ${PDF}{n, plural, one {# ${RLO}row${PDF}} other {# ${RLO}rows${PDF}}}.`);
+  assert.doesNotThrow(() => I18n.parse(p));
+  assert.equal(I18n.direction('ar-XB'), 'rtl');
+});
