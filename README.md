@@ -1,6 +1,6 @@
 # Browser Genetic Programming
 
-**A zero-install, in-browser symbolic regression playground.** Give it a formula or a CSV of `x,y` points and watch Genetic Programming (GP) evolve a mathematical expression that explains the data, live, with the curve fit and expression tree on screen as it happens.
+**A zero-install, in-browser symbolic regression playground.** Give it a formula or a CSV of data and watch Genetic Programming (GP) evolve a mathematical expression that explains the data, live, with the curve fit and expression tree on screen as it happens.
 
 It is built for **learning and exploring** how GP works, with light practical use (fitting a formula to a small dataset) as a secondary goal. Everything runs locally in your browser; there is no backend and your data never leaves your machine.
 
@@ -12,7 +12,9 @@ It is built for **learning and exploring** how GP works, with light practical us
 ## What it does
 
 - **Two data sources:** sample a target formula over an X range, or upload a CSV dataset.
-- **Live evolution** in a Web Worker, so the page stays responsive.
+- **Several input variables:** a CSV may have up to 10 input columns; pick which column to predict.
+- **Live evolution** in a Web Worker, so the page stays responsive. Fast mode runs many generations between screen updates; slow mode shows every generation.
+- **Replay:** step or play through every improvement of a run, watching the formula, fit and tree change.
 - **Readable results:** the best program is simplified before it is shown (`(2.469 + ((-2.507 + x*x) - -1.712))` becomes `pow(x, 2) + 1.674`), drawn as an expression tree, and plotted over the data.
 - **Progress chart:** the best and median fit of every generation, on a log scale, against your target.
 - **Export:** copy the best program as a formula, JavaScript, Python or LaTeX.
@@ -29,6 +31,7 @@ It is built for **learning and exploring** how GP works, with light practical us
 1. Open the [live demo](https://bowo-prasetyo.github.io/genetic-programming/#/).
 2. Keep the default target `x*x + 2` and press **Start Evolution**. It is solved in the first generation.
 3. Now try something harder: set the formula to `sin(x) * exp(x/3)`, pick the **Everything** operator preset and press **Start Evolution**. Watch the progress chart fall towards the dashed target line.
+4. When it stops, press **▶ Replay** to watch how the formula improved over the run.
 
 ---
 
@@ -44,16 +47,19 @@ It is built for **learning and exploring** how GP works, with light practical us
 - **Sample points** (default 101) are spaced evenly across the X range. The engine trains on exactly these points, and the graph plots exactly these points.
 - Points where the formula is not finite (for example `1/x` at `x = 0`) are skipped.
 
-**Upload dataset:** upload a CSV with a header row and two numeric columns:
+**Upload dataset:** upload a CSV with numeric columns, usually with a header row:
 
 ```csv
-x,y
--5,12
--4,7
--3,3
+height,width,depth,price
+1.5,4.4,4.1,27.4
+2.0,3.0,2.8,22.7
 ```
 
-Rows that are not two finite numbers are ignored. Every valid row is used for training; the graph shows at most 60 of them to keep drawing fast.
+- One column is the **target** to predict: the last one by default. With three or more columns, a **Target column** menu lets you choose another.
+- Every other column becomes an **input variable** (up to 10), named after its header. Names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`, and a name that clashes with a function or keyword gets a `v_` prefix.
+- With a **single input**, the variable is called `x` and the graph plots the data with the fitted curve. With **several inputs** the graph plots each row's prediction against its actual value.
+- Commas, semicolons and tabs all work as separators. A first row that is all numbers is treated as data, and the columns are called `x1`, `x2`, … and `y`.
+- Rows with missing or non-numeric values are ignored. Every valid row is used for training.
 
 ### 2. Configure the run
 
@@ -71,6 +77,8 @@ Every setting has a short explanation under it in the app.
 | Initial Tree Depth | Maximum depth of the random programs that start the run (1–12)                                | 4       |
 | Max Tree Depth     | Hard depth limit for evolved programs, to stop them bloating (up to 17)                       | 8       |
 | Linear scaling     | Score each program as `a + b·f(x)` with the best-fitting `a` and `b`                          | on      |
+| Constant optimisation | Experimental: fine-tune the constants of a random 10% of programs each generation. It did not improve results in our benchmark (see [How it works](#constant-optimisation-experimental)). | off |
+| Speed              | **Fast:** as many generations as fit in about 40 ms between screen updates. **Slow:** one generation per update, about 6 per second, for watching. | Fast |
 | Operators          | The building blocks the search may use                                                        | `+ - *` |
 
 The defaults were checked with the benchmark described under [Example results](#example-results). Crossover 0.8, mutation 0.2 and elitism 0.02 did slightly worse on the harder targets.
@@ -96,11 +104,13 @@ A run pauses on its own when it reaches the target R² or Max Generations, and a
 
 ### 4. Read the results
 
-- **Best program:** the simplified formula. The tabs switch between a plain formula, JavaScript (`const f = (x) => …`), Python (`def f(x): …` using `math`) and LaTeX. **Copy** puts the current tab on the clipboard. Exported code keeps 12 significant digits; the on-screen formula shows 5.
-- **Fit:** the data (cyan) and the best program (red).
+- **Best program:** the simplified formula. The tabs switch between a plain formula, JavaScript (`const f = (x) => …`), Python (`def f(x): …` using `math`) and LaTeX. With several inputs the function takes them as parameters, for example `(height, width, depth) => …`. **Copy** puts the current tab on the clipboard. Exported code keeps 12 significant digits; the on-screen formula shows 5.
+- **Replay:** after a run (or while paused), **▶ Replay** plays through every improvement of the best program, and the slider jumps to any of them. The formula, export, fit chart and tree all follow the replay; the progress chart marks its generation in blue. **Back to latest** returns to the current best.
+- **Fit:** with one input, the data (cyan) and the best program (red). With several inputs, predicted against actual values for each row; points on the red diagonal are predicted exactly.
 - **Progress:** 1 − R² of the best (red) and median (grey) program in each generation, on a log scale, so the step from R² 0.99 to 0.9999 is as visible as the step from 0 to 0.9. The dashed green line is your target.
-- **Expression tree:** orange operators, green `x`, khaki constants. It scales to fit the page.
+- **Expression tree:** orange operators, green variables, khaki constants. It scales to fit the page.
 - **Program size:** the number of nodes in the program as shown.
+- **Speed:** generations per second.
 
 ### 5. Share a run
 
@@ -108,7 +118,7 @@ After a run, **Copy share link** copies a link to this page that contains the se
 
 ### 6. Restore after closing the browser
 
-On load, if a stored session exists, the app asks whether to restore it. A restored session comes back paused with its population, generation, best program, progress chart, settings and dataset. Press **Resume** to continue.
+On load, if a stored session exists, the app asks whether to restore it. A restored session comes back paused with its population, generation, best program, progress chart, replay timeline, settings and dataset. Press **Resume** to continue.
 
 ---
 
@@ -116,7 +126,7 @@ On load, if a stored session exists, the app asks whether to restore it. A resto
 
 ### Representation
 
-Programs are expression trees. Leaves are the variable `x` or a random constant drawn from [-10, 10]. Internal nodes are the enabled operators.
+Programs are expression trees. Leaves are input variables (`x`, or the dataset's column names) or random constants drawn from [-10, 10]. Internal nodes are the enabled operators.
 
 The first generation is created with *ramped half-and-half*: depths 2 up to Initial Tree Depth, half of them "full" (every branch to the maximum depth) and half "grow" (branches may stop early), so it starts with a wide variety of shapes.
 
@@ -134,7 +144,7 @@ The small size penalty discourages bloat. A program that produces a non-finite v
 
 ### Each generation
 
-1. Sort the population by fitness and report the best program.
+1. Sort the population by fitness. If constant optimisation is on, optimise a random 10% of programs first (see below). Record the best and median R² for the progress chart, and add the best program to the replay timeline if it changed.
 2. Stop if the best R² ≥ Target R², or the generation limit is reached.
 3. Build the next generation of exactly *Population Size* programs:
    - **Elites:** the top *Elitism Rate* fraction, copied unchanged.
@@ -144,6 +154,31 @@ The small size penalty discourages bloat. A program that produces a non-finite v
    - **subtree mutation:** a random subtree is replaced by a new random one; or
    - **point mutation:** one node changes. An operator becomes another of the same arity, `x` becomes a constant or vice versa, or a constant is nudged by a coarse, medium or fine step (about ±1, ±0.1 or ±0.01 of its size), so constants can be both moved and fine-tuned.
 
+### Constant optimisation (experimental)
+
+Linear scaling fits a program's outer offset and scale, but not constants inside functions, like the `1/3` in `exp(x/3)`. When enabled, constant optimisation tunes them with a short (1+1) evolution strategy:
+
+1. All of a program's constants are perturbed with Gaussian noise.
+2. The change is kept if fitness improves.
+3. Each constant's step size grows after a success and shrinks after a failure.
+
+The improved constants are written back into the population. Each generation, a random 10% of programs each get 10 steps.
+
+**It is off by default because it did not help.** On the three targets with constants inside non-linear functions (20 runs each; R² ≥ 0.999 within 200 generations):
+
+| Strategy                                   | Reached | Time  |
+| ------------------------------------------ | ------- | ----- |
+| Off                                        | **31 / 60** | **298 s** |
+| Random 10% of programs, 10 steps each      | 26 / 60 | 912 s |
+| Best program only, 20 steps                | 21 / 60 | 418 s |
+| Best 3 programs, 20 steps                  | 17 / 60 | –     |
+
+Polishing the best programs' constants makes them win most tournaments, so the population loses diversity and stalls. The random strategy harms least but triples the run time. A method that keeps diversity, such as optimising constants only when the search stagnates, remains future work.
+
+### Speed
+
+In **Fast** mode the worker runs generations back to back for about 40 ms, then sends one update covering all of them. Every generation is still added to the progress chart and replay. The full population, needed only for checkpoints, is sent every 10 generations, on Stop and on finish. This replaces Phase 2's fixed 50 ms pause per generation, which capped runs at about 20 generations per second. A population of 200 now runs at roughly 60–100 generations per second in a typical browser, depending on the operators. **Slow** mode sends every generation with a 150 ms pause.
+
 ### Simplification
 
 Before a program is shown or exported it is simplified:
@@ -151,6 +186,7 @@ Before a program is shown or exported it is simplified:
 - constants are folded;
 - like terms are collected (`x + x` becomes `2 * x`, `x * x` becomes `pow(x, 2)`);
 - constants are distributed over sums;
+- factors cancel across divisions (`(u / v) * v` becomes `u`);
 - identities such as `u * 1`, `u - u`, `u / u` and `pow(u, 1)` are removed.
 
 The simplified program is then checked against the original on every training point and only used if it computes the same values. The search itself works on the unsimplified programs.
@@ -159,17 +195,17 @@ The simplified program is then checked against the original on every training po
 
 Sessions are stored in the browser's IndexedDB (`gp-db`):
 
-- `sessions` holds a single checkpoint of the latest run: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, recent history and the progress chart. It is written whenever the best fitness improves, at least every 10 generations, and on Stop, finish, or page unload.
+- `sessions` holds a single checkpoint of the latest run: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, recent history, the progress chart and the replay timeline (up to 300 snapshots). It is written whenever the best fitness improves, at least every 10 generations, and on Stop, finish, or page unload.
 - `bestPrograms` keeps a log of each new best program. It is not shown in the UI yet.
 
 Everything stays in your browser; clearing site data deletes it.
 
 ### Known limitations
 
-- **Single input variable** (`x`) only.
-- **Constants inside non-linear functions** (the `1/3` in `exp(x/3)`) are found by mutation alone. Linear scaling handles only the outer offset and scale, so these targets are solved less reliably; see [Example results](#example-results).
+- **Constants inside non-linear functions** (the `1/3` in `exp(x/3)`) are found by mutation alone, so these targets are solved less reliably than in Phase 1; see [Example results](#example-results). The experimental constant optimisation did not fix this.
+- **Formula mode has one variable** (`x`); several variables need a CSV.
 - **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
-- **Fixed 50 ms pause between generations**, so the UI can redraw. Long runs are therefore slower than the hardware allows.
+- **The replay keeps up to 300 snapshots.** In longer runs, intermediate improvements are thinned out; the first and latest are always kept.
 
 ---
 
@@ -206,7 +242,7 @@ Then open <http://localhost:8000>. A local web server is needed because browsers
 
 ### Tests
 
-The engine and shared helpers (simplifier, exporters, share links, formula checks) have a headless test suite that runs the real `worker.js` in Node (version 18 or later), with no browser and no dependencies:
+The engine and shared helpers (simplifier, exporters, CSV parsing, share links, formula checks) have a headless test suite that runs the real `worker.js` in Node (version 18 or later), with no browser and no dependencies:
 
 ```bash
 npm test
@@ -224,6 +260,7 @@ Tests run on every push and pull request via GitHub Actions.
 | `app.js`        | Vue UI: inputs, visualisation, persistence, About page                                        |
 | `style.css`     | Styles                                                                                        |
 | `test/`         | Headless Node tests (`node:test`)                                                             |
+| `bench/`        | `npm run bench`: how often the engine reaches R² ≥ 0.999 on six targets                       |
 
 The About page renders this README, fetched live from the `main` branch.
 
@@ -235,13 +272,13 @@ The About page renders this README, fetched live from the `main` branch.
 
 - Phase 1, restore trust: engine bug fixes, input validation, tests and CI, accurate documentation.
 - Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
+- Phase 3: multi-variable regression, animated replay, batched generations for speed, and experimental constant optimisation (off by default, with the benchmark that justifies it).
 
-**Next: one differentiator at a time**
+**Next**
 
-- Multi-variable regression from multi-column CSVs
-- Animated replay of a run, for teaching
-- Faster runs: several generations per UI update instead of a fixed pause
-- Local optimisation of constants inside non-linear functions
+- Constant optimisation that keeps population diversity, for example applied only when the search stagnates, or to offspring before they compete
+- Train/test split for datasets, so users can see whether a formula generalises
+- Upload a CSV and fit only some of its columns
 
 **Research ideas (not planned):** strongly typed GP, automatically defined functions, grammar-guided GP, semantic GP, multi-objective GP, island models (including across browsers via WebRTC), WASM/GPU acceleration, neural-GP hybrids, and full program synthesis with control flow.
 
