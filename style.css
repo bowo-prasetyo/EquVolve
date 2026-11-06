@@ -866,3 +866,9 @@ input[type="file"] {
   max-width: 100%;
   min-width: 0;
 }
+
+/* Japanese has no spaces between words: break lines between phrases
+   rather than anywhere (where the browser supports it) */
+:lang(ja) {
+  word-break: auto-phrase;
+}

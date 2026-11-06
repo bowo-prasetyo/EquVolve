@@ -23,6 +23,7 @@
   const LOCALES = {
     en: { name: 'English', intl: 'en-GB', dir: 'ltr' },
     id: { name: 'Bahasa Indonesia', intl: 'id-ID', dir: 'ltr' },
+    ja: { name: '日本語', intl: 'ja-JP', dir: 'ltr' },
     'en-XA': { name: 'Pseudo-English', intl: 'en-GB', numbers: 'de-DE', dir: 'ltr', pseudo: 'en', transform: 'accents' },
     'ar-XB': { name: 'Pseudo-Bidi', intl: 'en-GB', dir: 'rtl', pseudo: 'en', transform: 'bidi' }
   };

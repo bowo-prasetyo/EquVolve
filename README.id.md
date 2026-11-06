@@ -4,7 +4,7 @@
 
 *Saksikan persamaan berevolusi.* EquVolve (dibaca **EK-yu-volv**) menggabungkan kata *equation* (persamaan) dan *evolve* (berevolusi).
 
-> Ini terjemahan bahasa Indonesia dari [README berbahasa Inggris](https://github.com/bowo-prasetyo/equvolve/blob/main/README.md). Jika ada perbedaan, versi bahasa Inggris yang berlaku. Bagian untuk pengembang hanya diringkas di sini.
+> Ini terjemahan bahasa Indonesia dari [README berbahasa Inggris](https://github.com/bowo-prasetyo/equvolve/blob/main/README.md). Jika ada perbedaan, versi bahasa Inggris yang berlaku. Bagian untuk pengembang hanya diringkas di sini. Tersedia juga dalam [bahasa Jepang](https://github.com/bowo-prasetyo/equvolve/blob/main/README.ja.md).
 
 **EquVolve menemukan rumus yang cocok dengan data Anda, dan Anda bisa menyaksikan prosesnya.** Berikan sebuah rumus atau berkas CSV berisi angka, lalu EquVolve membiakkan rumus-rumus kandidat, mempertahankan yang paling cocok, dan memperbaikinya generasi demi generasi, sambil menampilkan kurva yang dicocokkan dan pohon rumusnya di layar. Metode ini disebut *pemrograman genetik* (*genetic programming*, GP), dan menemukan rumus dengan cara ini disebut *regresi simbolik*.
 
@@ -26,7 +26,7 @@ EquVolve dibuat untuk **belajar dan menjelajahi** cara kerja GP, dan untuk keper
 - **Ekspor:** salin rumus terbaik sebagai teks biasa, JavaScript, Python, atau LaTeX.
 - **Tautan berbagi:** sekali klik menyalin tautan berisi pengaturan, data (hingga 2.000 baris), dan rumus terbaik.
 - **Pencarian yang dapat diatur:** populasi, generasi, target kecocokan, laju evolusi, kedalaman pohon, dan 23 operator dengan prasetel.
-- **Bahasa Indonesia dan Inggris:** antarmuka mengikuti bahasa peramban Anda; menu di bilah atas mengganti bahasa seketika, dan pilihan Anda diingat di peramban ini.
+- **Bahasa Indonesia, Inggris, dan Jepang:** antarmuka mengikuti bahasa peramban Anda; menu di bilah atas mengganti bahasa seketika, dan pilihan Anda diingat di peramban ini.
 - **Tema terang dan gelap:** seluruh halaman, termasuk grafik, mengikuti pengaturan perangkat Anda secara bawaan; tombol di bilah atas berganti antara Otomatis, Terang, dan Gelap, dan pilihannya diingat di peramban ini.
 - **Hentikan, lanjutkan, dan pulihkan:** hentikan proses, ubah pengaturan, lalu teruskan. Proses Anda disimpan di peramban, sehingga tetap ada setelah tab ditutup.
 - **Pemeriksaan sebelum berjalan:** rumus, rentang, atau pengaturan yang tidak valid dilaporkan sebelum proses dimulai, semuanya sekaligus dan di samping pengaturan yang perlu diperbaiki. Jika rumus Anda memakai operator yang tidak dicentang (seperti `/` dalam `x*x + 2/x`), aplikasi memberi tahu dan mencentangnya untuk Anda dengan sekali klik.

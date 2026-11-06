@@ -136,6 +136,9 @@ const SAME_AS_ENGLISH = {
     'restore.summary.fit', // "R² {r2} ({quality})"
     'csv.skipped.separator',
     'sentence.separator'
+  ]),
+  ja: new Set([
+    'operators.preset.expLog' // "Exp / Log": function names
   ])
 };
 

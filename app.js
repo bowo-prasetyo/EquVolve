@@ -2103,7 +2103,7 @@ function layoutTree(root) {
 // The README in each language that has one; others show the English one.
 // Fetched from the main branch, so a change shows once it is merged.
 const README_BASE = 'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/';
-const README_FILES = { en: 'README.md', id: 'README.id.md' };
+const README_FILES = { en: 'README.md', id: 'README.id.md', ja: 'README.ja.md' };
 
 // The anchor GitHub gives a heading, so the README's in-page links
 // (such as #example-results) work here as they do on GitHub:

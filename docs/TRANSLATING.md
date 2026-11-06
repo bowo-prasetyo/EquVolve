@@ -4,7 +4,7 @@ This guide is for people translating EquVolve's interface, and for developers ad
 
 Every word the app shows comes from one file per language in [`locales/`](../locales). English, [`locales/en.json`](../locales/en.json), is the source and the fallback: a message missing from a translation is shown in English.
 
-The app is available in English and Indonesian ([`locales/id.json`](../locales/id.json)). Visitors get their browser's language if the app has it, and can switch with the menu in the top bar; the change is immediate and remembered in their browser.
+The app is available in English, Indonesian ([`locales/id.json`](../locales/id.json)) and Japanese ([`locales/ja.json`](../locales/ja.json)). Visitors get their browser's language if the app has it, and can switch with the menu in the top bar; the change is immediate and remembered in their browser.
 
 ## The message files
 
@@ -53,6 +53,13 @@ A select picks a wording from a value the app passes. Translate the text inside 
 ```
 
 `fit.quality` stands alone (the badge under Best R²); `fit.quality.inline` is used inside a sentence, so write it as it reads mid-sentence in your language.
+
+### Punctuation and spacing
+
+Use your language's own punctuation in the messages: Japanese writes `「{name}」`, `（目的変数）` and `：`, for example. Two messages are punctuation only:
+
+- `sentence.separator` joins whole sentences shown together (such as "Share link copied to the clipboard. It contains…"): a space in English and Indonesian, nothing at all in Japanese and Chinese.
+- `csv.skipped.separator` separates the groups of skipped lines: `; ` in English, `、` in Japanese.
 
 ### Apostrophes and braces
 

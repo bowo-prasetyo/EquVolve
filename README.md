@@ -4,7 +4,7 @@
 
 *Watch equations evolve.* EquVolve (pronounced **EK-yoo-volve**) joins *equation* and *evolve*.
 
-> Baca dalam [Bahasa Indonesia](https://github.com/bowo-prasetyo/equvolve/blob/main/README.id.md).
+> Other languages: [Bahasa Indonesia](https://github.com/bowo-prasetyo/equvolve/blob/main/README.id.md) · [日本語](https://github.com/bowo-prasetyo/equvolve/blob/main/README.ja.md)
 
 **EquVolve finds a formula that fits your data, and lets you watch it happen.** Give it a formula or a CSV file of numbers, and it breeds candidate formulas, keeps the ones that fit best, and improves them generation by generation, with the fitted curve and the formula's tree on screen as it goes. The method is called *genetic programming* (GP), and finding a formula this way is called *symbolic regression*.
 
@@ -26,7 +26,7 @@ It is built for **learning and exploring** how GP works, and for light practical
 - **Export:** copy the best formula as plain text, JavaScript, Python or LaTeX.
 - **Share links:** one click copies a link with the settings, the data (up to 2,000 rows) and the best formula.
 - **Adjustable search:** population, generations, target fit, the evolution rates, tree depths, and 23 operators with presets.
-- **English and Indonesian:** the interface follows your browser's language; the menu in the top bar switches language at once, and the choice is remembered in this browser. The About page shows this README in the chosen language when there is a translation.
+- **English, Indonesian and Japanese:** the interface follows your browser's language; the menu in the top bar switches language at once, and the choice is remembered in this browser. The About page shows this README in the chosen language when there is a translation.
 - **Light and dark themes:** the whole page, charts included, follows your device's setting by default; the button in the top bar switches between Auto, Light and Dark, and the choice is remembered in this browser.
 - **Stop, resume and restore:** stop a run, change settings and carry on. Your run is saved in the browser, so it survives closing the tab.
 - **Checks before running:** invalid formulas, ranges or settings are reported before a run starts, all at once and next to the setting to fix. If your formula uses an operator that is not ticked (such as `/` in `x*x + 2/x`), the app says so and ticks it for you in one click.
@@ -397,8 +397,8 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 | --------------- | --------------------------------------------------------------------------------------------- |
 | `index.html`    | Page shell; applies the saved theme before the first paint, and loads pinned versions of Vue, Vue Router and Marked from jsDelivr |
 | `i18n.js`       | Translation: chooses the interface language, loads its messages and formats them (plurals, lists) |
-| `locales/`      | The interface's text, one ICU JSON file per language (`en.json` is the source, `id.json` Indonesian) |
-| `README.id.md`  | This README in Indonesian, shown on the About page when the interface is in Indonesian        |
+| `locales/`      | The interface's text, one ICU JSON file per language (`en.json` is the source; `id.json` Indonesian, `ja.json` Japanese) |
+| `README.id.md`, `README.ja.md` | This README in Indonesian and Japanese, shown on the About page in those languages |
 | `shared.js`     | Code shared by UI and engine: evaluation, formula sampling and checks (including the operators a formula needs), simplification, export, CSV parsing and the sample data, share links, config validation, R² in words, and the charts' layout and colours |
 | `worker.js`     | The GP engine (runs in a Web Worker)                                                           |
 | `app.js`        | Vue UI: inputs, visualisation, persistence, replay, share links, theme toggle, About page     |
@@ -422,7 +422,7 @@ The About page renders this README (or its translation, in the interface's langu
 - Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
 - Phase 3: multi-variable regression, animated replay, batched generations for speed, and experimental constant optimisation (off by default, with the benchmark that justifies it).
 - Usability, round 2: a banner instead of a dialog to restore a saved run, controls at least 44 px tall on phones (operator chips), tree nodes that fit long numbers and names, R² in words and results in the page's own font, and CSV sample data, a preview and a report of skipped rows.
-- Indonesian: the interface and this README in Bahasa Indonesia, with a language switcher.
+- Indonesian and Japanese: the interface and this README in Bahasa Indonesia and 日本語, with a language switcher.
 - Ready for translation: every word of the interface in one message file per language, with proper plurals and lists, numbers written the way each language writes them, a layout that mirrors for right-to-left languages and wraps for longer ones, test languages that find untranslated text and layout problems, and a [translation guide](docs/TRANSLATING.md).
 - Usability: the main button follows the next useful step (with **New run** and an **Undo** in place of a confirmation dialog), a hint and one-click fix for operators the formula needs, the advanced settings tucked away, run buttons that stay in view, every problem shown at once next to its setting, and charts with axes that stay sharp and readable on any screen.
 

@@ -183,7 +183,7 @@ test('a right-to-left language mirrors the layout, but formulas and charts stay 
   assert.equal(await direction('svg.tree'), 'ltr');
 });
 
-for (const lang of ['en-XA', 'ar-XB']) {
+for (const lang of ['en-XA', 'ar-XB', 'ja']) {
   test(`on a small phone, ${lang} text wraps instead of widening the page`, async (t) => {
     const page = await openApp(t, { url: `${appUrl()}?lang=${lang}#/`, viewport: { width: 320, height: 640 } });
     const overflow = () => page.evaluate(() => {
