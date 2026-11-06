@@ -175,3 +175,12 @@ test('multi-variable data: finds y = 2a + 3b² − c using only the given variab
     }
   }
 });
+
+test('a floating-point leftover offset is not shown in the model', () => {
+  const w = configuredWorker({ targetFormula: 'sin(x) + sin(x*x)' });
+  const m = w.context.dropNegligibleOffset({ op: '-', left: { op: 'sin', child: 'x' }, right: '2.2204e-16' });
+  assert.deepEqual(JSON.parse(JSON.stringify(m)), { op: 'sin', child: 'x' });
+
+  const kept = w.context.dropNegligibleOffset({ op: '+', left: 'x', right: '0.01' });
+  assert.equal(kept.right, '0.01');
+});

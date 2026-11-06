@@ -305,7 +305,22 @@ function modelOf(program) {
     model = scaledTree(program, a, b);
   }
 
-  return simplifyTree(model, points);
+  return dropNegligibleOffset(simplifyTree(model, points));
+}
+
+// Remove a trailing "+ c" / "- c" that is floating-point noise relative
+// to the data (e.g. "- 2.2e-16" left over after constants cancel).
+function dropNegligibleOffset(model) {
+  const scale = Math.abs(meanY) + Math.sqrt(ssTot / (points.length || 1));
+
+  if (
+    typeof model === 'object' && (model.op === '+' || model.op === '-') &&
+    isConstant(model.right) && Math.abs(Number(model.right)) <= 1e-9 * scale
+  ) {
+    return model.left;
+  }
+
+  return model;
 }
 
 // =========================================================
