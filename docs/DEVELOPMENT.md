@@ -1,0 +1,143 @@
+# EquVolve developer guide
+
+This guide is for people changing EquVolve's code. For what the app does and how to use it, see the [README](../README.md).
+
+EquVolve is a static site with no build step and no runtime dependencies besides three pinned CDN scripts (Vue, Vue Router, Marked). Everything runs in the browser.
+
+## Architecture
+
+```
+index.html ──loads──▶ shared.js ──▶ app.js (Vue UI, main thread)
+                                      │  postMessage({type, config, ...})
+                                      ▼
+                                   worker.js (GP engine, Web Worker)
+                                      └─ importScripts('shared.js')
+```
+
+- **`shared.js`** holds the code both sides need: the operator table, formula checks and sampling, tree evaluation, simplification, printing and export, CSV parsing, config validation and normalisation, and share links. The UI draws curves with the same `evaluateTree` the engine scores with, so what you see is what was scored. In Node it exports its functions through `module.exports` for the tests. In the browser they are globals.
+- **`worker.js`** is the engine. It owns the population and the training points, runs generations, and sends results to the page. It never touches the DOM or storage.
+- **`app.js`** is the UI: inputs, validation messages, charts (canvas), the expression tree (SVG), replay, export, share links, IndexedDB persistence, the theme toggle and the About page. The About page fetches `README.md` from the `main` branch on GitHub and renders it with Marked. A README change shows up in the live app only once it is merged to `main`.
+
+Routing uses hash history (`#/`, `#/about`), so the site works on any static host, including GitHub Pages. Workers cannot load from `file://`, so serve the folder over HTTP (`python3 -m http.server 8000`).
+
+## Programs (trees)
+
+A program is a plain JSON tree:
+
+| Form | Meaning |
+| --- | --- |
+| `'x'`, `'height'` | A variable: any string matching `^[A-Za-z_][A-Za-z0-9_]*$` |
+| `'3.141'` | A constant: any other string (or number) |
+| `{ op: 'sin', child }` | Unary operator |
+| `{ op: '+', left, right }` | Binary operator |
+
+`treeToString` gives a fully parenthesised form. The engine also uses it as the key of its fitness cache (up to 50,000 entries, cleared when the training data changes).
+
+For storage and share links, trees are packed with `compressTree` into nested arrays (`'x'`, `['sin', child]`, `['+', left, right]`) and unpacked with `decompressTree`. Trees from share links are untrusted: `isValidTree` checks operators, variables, constants and a maximum nesting of 64.
+
+## Worker messages
+
+### Page → worker
+
+| `type` | Payload | Effect |
+| --- | --- | --- |
+| `start` | `config` | Apply the config, create a new ramped half-and-half population at generation 0, and run. |
+| `stop` | none | Stop after the current batch. If a run was going, reply with `stopped`. |
+| `resume` | `config` | Apply the (possibly edited) config, top the population up to Population Size if needed, and continue. If the run is already at Max Generations, reply with `finished` straight away. |
+| `restore` | `state: { config, generation, population }` | Load a checkpoint without running, and reply with `restored`. |
+
+Applying a config always rebuilds the training points and clears the fitness cache.
+
+### Worker → page
+
+`update`, `finished` and `stopped` share one shape:
+
+| Field | Meaning |
+| --- | --- |
+| `best` | The raw best program, as it was scored |
+| `model` | What the user sees: `best` wrapped in `a + b·f` when linear scaling is on, then simplified |
+| `fitness`, `rawError`, `r2` | Fitness of `best`: `(1 − R²) + 0.001 × size`, `1 − R²`, and R² |
+| `medianR2` | R² of the median program |
+| `size` | Node count of `model` |
+| `generation` | Latest generation number (counting from 1) |
+| `expression` | `treeToString(best)` |
+| `progress` | `[generation, bestR2, medianR2]` for every generation since the last message |
+| `timeline` | `{ g, r2, fitness, model }` each time the best program changed since the last message |
+| `population` | The full population. Only sent every 10 generations (`populationEvery`), and always on `stopped` and `finished` |
+| `reason` | `finished` only: `'targetReached'` or `'maxGenerations'` |
+
+`restored` carries `generation` and `populationSize`.
+
+The page needs every `progress` and `timeline` entry, because one `update` can cover many generations.
+
+## Config
+
+`buildConfig()` in `app.js` produces the config, `validateConfig()` in `shared.js` lists problems with it as user-facing strings, and `normalizeConfig()` fills in settings that older checkpoints and share links lack (for example `maxTreeDepth`, `linearScaling`, and `targetR2` from the old `minError`). When you add a setting, add it to all of these places:
+
+1. `DEFAULTS` and `buildConfig()` in `app.js` (plus a control, often a `SETTING_FIELDS` entry);
+2. `validateConfig()` if it has limits, and `normalizeConfig()` with a default, so old sessions still restore;
+3. `sanitizeShare()` in `shared.js` if share links should carry it (unknown fields are dropped);
+4. `applyConfig()` in `worker.js`;
+5. the settings table in the README.
+
+These config fields are read only by the engine and exist for tests and the benchmark. The UI never sets them:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `batchMs` | 40 (fast) / 0 (slow) | How long to run generations before sending an update |
+| `delayMs` | 5 (fast) / 150 (slow) | Pause between batches |
+| `populationEvery` | 10 | Send the population every this many generations |
+| `constOpt` | `{ mode: 'random', rate: 0.1, steps: 10, programs: 3 }` | Constant optimisation strategy. `mode: 'top'` optimises the best `programs` instead of a random `rate` share |
+
+## Persistence
+
+IndexedDB database `gp-db`, version 2 (the name predates EquVolve; keep it so old sessions restore):
+
+- **`sessions`** (key path `id`): one record, `id: 'latest'`, with `timestamp`, `generation`, `population` (compressed trees), `model`, `bestFitness`, `bestR2`, `bestSize`, `history`, `series` (`[g, best, median]`), `timeline` (`[g, r2, fitness, compressedModel]`), and `config` (the full config, dataset included, plus `uploadedFileName`). Older records may store the best program as `best` instead of `model`; `restoreSession` accepts both.
+- **`bestPrograms`** (auto-increment `id`): `{ timestamp, fitness, r2, tree, generation }` for each improvement. Written but not read by the UI.
+
+The theme preference lives in `localStorage` under `equvolve-theme` (`'light'` or `'dark'`; absent means Auto). A small inline script in `index.html` applies it before the first paint.
+
+## Share links
+
+`#/?run=<code>`, where `<code>` is one prefix character and then base64url:
+
+- `z`: the payload JSON compressed with `deflate-raw` (`CompressionStream`), used when the browser supports it;
+- `j`: the payload JSON uncompressed.
+
+The payload is `{ v: 1, config, model, r2, generation, datasetOmitted?, fileName? }`, where `config` is the run config and `model` the compressed best program. A dataset is packed as rows of numbers, `[x, y]` or `[...inputs, y]` in the order of `config.variables`, and is left out (`datasetOmitted: true`) when it has more than 2,000 rows. `decodeShare` rejects other versions and passes everything through `sanitizeShare`, which keeps only known, well-typed fields. The target formula is limited to 500 characters and is checked again by `compileFormula` before use. If you change the payload in a way older links cannot follow, increase `SHARE_VERSION`.
+
+## Formulas
+
+`compileFormula` first tokenises the source and allows only numbers, `x`, names on `Math` (with or without `Math.`), `+ - * / % **`, parentheses and commas. It then compiles it with `new Function` inside `with (Math)`. The token check is what makes formulas from share links safe, so keep it strict.
+
+## Adding an operator
+
+1. Add it to `OP_ARITY` and to the `switch` in `evaluateTree` (`shared.js`).
+2. Printing: plain, JavaScript and Python print unary operators as `name(...)`, `Math.name(...)` and `math.name(...)`. Check that the name exists in both languages. Add a LaTeX form to `LATEX_FUNCTIONS`, or a special case in `latex()`.
+3. Add it to an `OPERATOR_GROUPS` entry in `app.js` so it gets a checkbox. The **Everything** preset picks it up from `OP_ARITY` automatically.
+4. If it should be usable in target formulas, it must be a `Math` name.
+5. Update the operator list and count in the README, and add tests.
+
+## Tests
+
+```bash
+npm test
+```
+
+`test/helpers.js` runs the real `worker.js` in a Node `vm` context that provides `importScripts`, `postMessage` and `onmessage`. Timers are manual: `tick(n)` runs `n` timer callbacks. `baseConfig()` sets `batchMs: 0`, `delayMs: 0` and `populationEvery: 1`, so each tick is exactly one generation and every update carries the population. Its default `targetR2` is 2, which can never be reached, so runs last until Max Generations unless a test overrides it.
+
+| File | Covers |
+| --- | --- |
+| `engine.test.js` | Run lifecycle: target reached, max generations, stop/resume, restore, formula and dataset training points |
+| `shared.test.js` | Target formula syntax and round-tripping, non-finite samples, config validation, legacy `minError` |
+| `phase2-engine.test.js` | Depth limit, well-formed crossover and mutation, ramped initialisation, linear scaling, reported model and R² |
+| `phase2-shared.test.js` | Simplifier, printing, JavaScript/Python/LaTeX export, formula safety, share links, `normalizeConfig` |
+| `phase3-engine.test.js` | Batching and speed, population cadence, replay timeline, constant optimisation, multi-variable runs |
+| `phase3-shared.test.js` | Multiple variables, CSV parsing and variable names, multi-variable export, validation and share links |
+
+Tests are not run against the UI; check UI changes in a browser.
+
+## Benchmark
+
+`npm run bench` (`bench/benchmark.js`) runs six targets with the app's default settings through the same worker harness, and prints a Markdown table. Arguments: `node bench/benchmark.js [runsPerTarget=20] [targetIndex]`. A full run takes about 15 minutes. When you change the engine, rerun it and update the [Example results](../README.md#example-results) table. A difference of a few runs out of 20 is within noise.
