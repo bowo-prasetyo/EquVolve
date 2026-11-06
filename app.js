@@ -18,15 +18,15 @@ const OPERATOR_PRESETS = [
 ];
 
 const SETTING_FIELDS = [
-  { key: 'populationSize', label: 'Population Size', step: 1, hint: 'Individuals per generation.' },
-  { key: 'maxGenerations', label: 'Max Generations', step: 1, hint: 'Stop after this many generations.' },
-  { key: 'targetR2', label: 'Target R²', step: 0.001, hint: 'Stop as soon as the best program reaches this R² (1 = perfect fit).' },
-  { key: 'crossoverRate', label: 'Crossover Rate', step: 0.05, hint: 'Probability that an offspring is made by subtree crossover rather than copying a parent.' },
-  { key: 'mutationRate', label: 'Mutation Rate', step: 0.05, hint: 'Probability that an offspring is then mutated (subtree or point mutation).' },
-  { key: 'elitismRate', label: 'Elitism Rate', step: 0.01, hint: 'Fraction of the best programs copied unchanged to the next generation.' },
-  { key: 'tournamentSize', label: 'Tournament Size', step: 1, hint: 'Programs compared in each selection tournament; larger = greedier.' },
-  { key: 'treeDepth', label: 'Initial Tree Depth', step: 1, hint: 'Maximum depth of the random programs that start the run.' },
-  { key: 'maxTreeDepth', label: 'Max Tree Depth', step: 1, hint: `Hard depth limit for evolved programs (up to ${MAX_TREE_DEPTH_LIMIT}); limits bloat.` }
+  { key: 'populationSize', label: 'Population Size', step: 1, hint: 'How many programs are tried at once. More can find harder formulas, but each generation is slower.' },
+  { key: 'maxGenerations', label: 'Max Generations', step: 1, hint: 'The run pauses after this many generations; raise it and press Resume to go on.' },
+  { key: 'targetR2', label: 'Target R²', step: 0.001, hint: 'The run stops as soon as the best program fits this well (1 = perfect fit).' },
+  { key: 'crossoverRate', label: 'Crossover Rate', step: 0.05, hint: 'How often (0–1) a new program combines parts of two good programs, instead of copying one.' },
+  { key: 'mutationRate', label: 'Mutation Rate', step: 0.05, hint: 'How often (0–1) a new program then gets a small random change.' },
+  { key: 'elitismRate', label: 'Elitism Rate', step: 0.01, hint: 'The share (0–1) of the best programs kept unchanged for the next generation.' },
+  { key: 'tournamentSize', label: 'Tournament Size', step: 1, hint: 'Parents are chosen by letting this many random programs compete; larger favours the best more strongly.' },
+  { key: 'treeDepth', label: 'Initial Tree Depth', step: 1, hint: 'How deeply nested the random programs at the start may be.' },
+  { key: 'maxTreeDepth', label: 'Max Tree Depth', step: 1, hint: `How deeply nested any program may become (up to ${MAX_TREE_DEPTH_LIMIT}); stops programs growing without fitting better.` }
 ];
 
 const EXPORT_FORMATS = [
@@ -90,7 +90,7 @@ const Home = {
 
     <!-- ===================== 1. TARGET ===================== -->
     <section class="panel">
-      <h2>1. Target</h2>
+      <h2>1. Data</h2>
 
       <div class="field-row">
         <span class="field-label">Data source</span>
@@ -122,7 +122,7 @@ const Home = {
         <div class="field-row">
           <label class="field-label" for="samples">Sample points</label>
           <input id="samples" type="number" min="2" step="1" v-model.number="sampleCount" :disabled="isRunning">
-          <span class="hint">evenly spaced across the X range; used for both training and the graph</span>
+          <span class="hint">evenly spaced across the X range; these are the points the run fits</span>
         </div>
 
         <p class="hint">
@@ -138,9 +138,9 @@ const Home = {
         </div>
 
         <p class="hint">
-          A header row, then numeric columns. One column is the target to predict (the last one by default);
-          every other column becomes an input variable (up to {{ maxVariables }}).
-          With a single input the variable is called <code>x</code>.
+          Columns of numbers, usually with a header row. One column is the target to predict (the last one by default);
+          every other column becomes an input (up to {{ maxVariables }}).
+          With a single input it is called <code>x</code>. Rows with empty cells or text are skipped.
         </p>
 
         <div v-if="csvTable && csvTable.headers.length > 2" class="field-row">
@@ -177,7 +177,7 @@ const Home = {
               Linear scaling
             </span>
             <span class="hint">
-              Score each program as a + b·f(x) with the best-fitting a and b, so evolution only has to find the shape.
+              Lets every program be stretched and shifted (a + b·f(x)) to fit the data, so evolution only has to find the right shape.
             </span>
           </label>
 
@@ -205,6 +205,11 @@ const Home = {
         </div>
 
         <h3>Operators</h3>
+
+        <p class="hint">
+          The building blocks programs may use. Pick what matches your data: Trigonometric for waves,
+          Exp / Log for growth, decay or bell curves, Rational for division. A few fitting operators usually beat Everything.
+        </p>
 
         <div class="preset-row">
           <span class="hint">Presets:</span>
@@ -369,7 +374,7 @@ const Home = {
         </svg>
 
         <p class="hint">
-          Orange: operators · green: variables · khaki: constants.
+          Each circle is labelled with its operator, variable or number: operators are orange, variables green and numbers khaki.
         </p>
       </template>
 
@@ -691,7 +696,7 @@ const Home = {
       request.onsuccess = () => {
         const result = request.result;
 
-        if (result && confirm('Restore previous GP evolution session?')) {
+        if (result && confirm('Restore your previous run? It comes back paused, where you left it.')) {
           this.restoreSession(result);
         }
       };
@@ -1167,7 +1172,7 @@ const Home = {
         const table = parseCsv(e.target.result);
 
         if (table.headers.length < 2 || !table.rows.length) {
-          this.errorMessages = ['The CSV needs a header row and at least two numeric columns.'];
+          this.errorMessages = ['The CSV needs at least two columns of numbers, separated by commas, semicolons or tabs.'];
           return;
         }
 

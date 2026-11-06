@@ -48,7 +48,8 @@ test('every heading gets the anchor GitHub gives it', async (t) => {
   // spot checks against GitHub's anchors
   for (const id of [
     'what-it-does',
-    '1-choose-a-data-source',
+    '1-data-what-to-fit',
+    'when-a-run-does-not-reach-the-target',
     'constant-optimisation-experimental',
     'example-results'
   ]) {
@@ -77,7 +78,8 @@ test('an in-page link scrolls to its section and stays on the About page', async
 
   assert.ok(!(await heading.evaluate(inViewport)), 'the section starts off-screen');
 
-  await page.locator('.about a[href="#example-results"]').first().click();
+  // the first one shown (others may be inside a closed <details>)
+  await page.locator('.about a[href="#example-results"]:visible').first().click();
 
   // still the About page, at the same address, not a blank route
   assert.equal(page.url(), before);

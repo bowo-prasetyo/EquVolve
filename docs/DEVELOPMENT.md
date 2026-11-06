@@ -180,6 +180,16 @@ Prefer finding elements by role, label or visible text, as these tests do, over 
 
 **Chart colours follow the theme.** A canvas is not styled by CSS, so `app.js` reads the colours when it draws: `chartColors()` resolves each role in `CHART_COLOR_TOKENS` to a CSS custom property on `<html>`. Lines and points use the same `--key-*` tokens as the caption keys, so they always match; the background, grid, frame and labels use `--chart-bg`, `--chart-grid`, `--chart-frame` and `--chart-text`. Each theme block in `style.css` defines all of them. `applyTheme()` sends an `equvolve:themechange` event on `window`, and the Home page redraws both charts when it arrives, so a toggle or a device switch recolours them at once. To change a chart colour, change its token in all three theme blocks; `chart-theme.test.js` checks that every line colour keeps a 3:1 contrast (labels 4.5:1) with the chart background.
 
+## Writing the user guide
+
+The README's sections up to **How it works** are the user guide, and the About page shows them in the app. Keep them for someone who has never heard of genetic programming:
+
+- **Define terms once, early.** **Key ideas** explains program, population, generation, R² and best program. Use those words, not synonyms (individual, model, expression), and use the same words as the app's labels, hints and messages.
+- **Steps first, detail folded.** Reference detail (limits, edge cases, precision) goes in a `<details>` block under the step it belongs to. Leave a blank line after `<summary>` and before `</details>`, or the Markdown inside is not rendered.
+- **Quick start must succeed.** Check any example there with real runs at the default settings (the test harness in `test/helpers.js` with `loadWorker({ seed: null })` is enough); a newcomer's first run should not end in "Stopped at Max Generations".
+- **Keep the Messages table in step** with the messages in `validateConfig()` (`shared.js`) and `app.js`.
+- **Links:** `about.test.js` fails if an in-page link has no matching heading, so renaming a heading means updating its links.
+
 ## Benchmark
 
 `npm run bench` (`bench/benchmark.js`) runs six targets with the app's default settings through the same worker harness, and prints a Markdown table. Arguments: `node bench/benchmark.js [runsPerTarget=20] [targetIndex]`. A full run takes about 15 minutes. When you change the engine, rerun it and update the [Example results](../README.md#example-results) table. A difference of a few runs out of 20 is within noise.
