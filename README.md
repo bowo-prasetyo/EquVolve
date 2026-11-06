@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo-mark.svg" width="96" height="96" alt="EquVolve logo: an expression tree shaped like a V"></p>
+
 # EquVolve
 
 *Watch equations evolve.* EquVolve (pronounced **EK-yoo-volve**) joins *equation* and *evolve*.
@@ -263,6 +265,8 @@ Tests run on every push and pull request via GitHub Actions.
 | `style.css`     | Styles                                                                                        |
 | `test/`         | Headless Node tests (`node:test`)                                                             |
 | `bench/`        | `npm run bench`: how often the engine reaches R² ≥ 0.999 on six targets                       |
+| `assets/`       | Logo: `logo-mark.svg` (the icon), and `logo-on-dark.svg` / `logo-on-light.svg` (icon with the EquVolve wordmark) |
+| `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` | Browser and home-screen icons |
 
 The About page renders this README, fetched live from the `main` branch.
 

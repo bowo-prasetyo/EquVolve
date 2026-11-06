@@ -71,7 +71,10 @@ const Home = {
   <div class="container">
 
     <header class="page-header">
-      <h1>EquVolve</h1>
+      <h1 class="brand">
+        <img src="assets/logo-mark.svg" alt="" class="brand-mark">
+        <span>Equ<span class="brand-accent">Volve</span></span>
+      </h1>
       <p class="tagline">
         Evolve a formula that explains your data, live and entirely in your browser.
       </p>
