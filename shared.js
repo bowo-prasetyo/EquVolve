@@ -114,31 +114,49 @@ function generateFormulaSamples(formula, minX, maxX, count = DEFAULT_SAMPLE_COUN
 // =========================================================
 // TREES
 // =========================================================
-// A tree is a terminal string ('x' or a numeric constant such as
-// '3.141') or {op, child} (unary) or {op, left, right} (binary).
+// A tree is a terminal string - a variable name ('x', or a column name
+// for multi-variable data) or a numeric constant such as '3.141' - or
+// {op, child} (unary) or {op, left, right} (binary).
+
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function isTerminal(node) {
   return typeof node === 'string' || typeof node === 'number';
 }
 
-function isConstant(node) {
-  return isTerminal(node) && node !== 'x';
+function isVariable(node) {
+  return typeof node === 'string' && IDENTIFIER.test(node);
 }
 
-function evaluateTree(node, x) {
+function isConstant(node) {
+  return isTerminal(node) && !isVariable(node);
+}
+
+// The input of a training point: a number (single variable x) or an
+// object of named values (multi-variable data).
+function pointInput(p) {
+  return p.v !== undefined ? p.v : p.x;
+}
+
+// `input` is a number (the value of the single variable) or an object
+// mapping variable names to values.
+function evaluateTree(node, input) {
 
   if (node == null) {
     return NaN;
   }
 
   if (isTerminal(node)) {
-    return node === 'x' ? x : Number(node);
+    if (isVariable(node)) {
+      return typeof input === 'number' ? input : input[node];
+    }
+    return Number(node);
   }
 
   // unary operators
   if (node.child) {
 
-    const v = evaluateTree(node.child, x);
+    const v = evaluateTree(node.child, input);
 
     switch (node.op) {
       case 'sin': return Math.sin(v);
@@ -165,8 +183,8 @@ function evaluateTree(node, x) {
   }
 
   // binary operators
-  const left = evaluateTree(node.left, x);
-  const right = evaluateTree(node.right, x);
+  const left = evaluateTree(node.left, input);
+  const right = evaluateTree(node.right, input);
 
   switch (node.op) {
     case '+': return left + right;
@@ -192,10 +210,22 @@ function treeDepth(node) {
   return 1 + Math.max(treeDepth(node.left), treeDepth(node.right));
 }
 
-function containsX(node) {
-  if (isTerminal(node)) return node === 'x';
-  if (node.child) return containsX(node.child);
-  return containsX(node.left) || containsX(node.right);
+function containsVariable(node) {
+  if (isTerminal(node)) return isVariable(node);
+  if (node.child) return containsVariable(node.child);
+  return containsVariable(node.left) || containsVariable(node.right);
+}
+
+function treeVariables(node, out = new Set()) {
+  if (isTerminal(node)) {
+    if (isVariable(node)) out.add(node);
+  } else if (node.child) {
+    treeVariables(node.child, out);
+  } else {
+    treeVariables(node.left, out);
+    treeVariables(node.right, out);
+  }
+  return out;
 }
 
 // Fully parenthesised form; also used as a structural key.
@@ -242,15 +272,17 @@ function decompressTree(node) {
   };
 }
 
-// Strictly check an untrusted tree (e.g. from a share link).
-function isValidTree(node, depth = 0) {
+// Strictly check an untrusted tree (e.g. from a share link). Variables
+// must be among `variables`.
+function isValidTree(node, variables = ['x'], depth = 0) {
   if (depth > 64) return false;
   if (typeof node === 'string') {
-    return node === 'x' || Number.isFinite(Number(node));
+    return isVariable(node) ? variables.includes(node) : Number.isFinite(Number(node));
   }
   if (!node || typeof node !== 'object' || !OP_ARITY[node.op]) return false;
-  if (OP_ARITY[node.op] === 1) return isValidTree(node.child, depth + 1);
-  return isValidTree(node.left, depth + 1) && isValidTree(node.right, depth + 1);
+  if (OP_ARITY[node.op] === 1) return isValidTree(node.child, variables, depth + 1);
+  return isValidTree(node.left, variables, depth + 1) &&
+    isValidTree(node.right, variables, depth + 1);
 }
 
 // =========================================================
@@ -361,14 +393,27 @@ function buildSum(node) {
   return out;
 }
 
-function collectProduct(node, factors) {
-  if (!isTerminal(node) && node.op === '*') {
-    collectProduct(node.left, factors);
-    collectProduct(node.right, factors);
+// Flatten products and quotients into factors with a sign: +1 for the
+// numerator, -1 for the denominator (u / v = u * v^-1).
+function collectProduct(node, factors, sign = 1) {
+  if (!isTerminal(node) && (node.op === '*' || node.op === '/')) {
+    collectProduct(node.left, factors, sign);
+    collectProduct(node.right, factors, node.op === '*' ? sign : -sign);
     return;
   }
 
-  factors.push(node);
+  factors.push({ node, sign });
+}
+
+function productOf(factors) {
+  let out = null;
+
+  for (const { power, node: f } of factors) {
+    const factor = power === 1 ? f : { op: 'pow', left: f, right: num(power) };
+    out = out === null ? factor : { op: '*', left: out, right: factor };
+  }
+
+  return out;
 }
 
 function buildProduct(node) {
@@ -378,18 +423,22 @@ function buildProduct(node) {
   let constant = 1;
   const groups = new Map();
 
-  for (const f of raw) {
+  for (const { node: f, sign } of raw) {
     const c = constValue(f);
 
     if (c !== null) {
-      constant *= c;
+      if (sign < 0 && c === 0) {
+        return node; // division by zero: leave it alone
+      }
+
+      constant = sign > 0 ? constant * c : constant / c;
       continue;
     }
 
     // pow(u, k) with a constant k counts as k factors of u
     const exponent = !isTerminal(f) && f.op === 'pow' ? constValue(f.right) : null;
     const base = exponent !== null ? f.left : f;
-    const power = exponent !== null ? exponent : 1;
+    const power = (exponent !== null ? exponent : 1) * sign;
 
     const key = treeToString(base);
     const g = groups.get(key);
@@ -405,13 +454,15 @@ function buildProduct(node) {
     return '0';
   }
 
-  let out = null;
+  const kept = [...groups.values()].filter(g => g.power !== 0);
+  const numerator = productOf(kept.filter(g => g.power > 0));
+  const denominator = productOf(
+    kept.filter(g => g.power < 0).map(g => ({ power: -g.power, node: g.node }))
+  );
 
-  for (const { power, node: f } of groups.values()) {
-    if (power === 0) continue;
-    const factor = power === 1 ? f : { op: 'pow', left: f, right: num(power) };
-    out = out === null ? factor : { op: '*', left: out, right: factor };
-  }
+  let out = denominator === null ?
+    numerator :
+    { op: '/', left: numerator === null ? '1' : numerator, right: denominator };
 
   if (out === null) {
     return num(constant);
@@ -423,7 +474,7 @@ function buildProduct(node) {
 
   // c * (u + v - w)  ->  c*u + c*v - c*w, so the a + b*(...) wrapper
   // from linear scaling folds into the program's own coefficients
-  if (groups.size === 1 && !isTerminal(out) && (out.op === '+' || out.op === '-')) {
+  if (kept.length === 1 && !isTerminal(out) && (out.op === '+' || out.op === '-')) {
     const terms = [];
     collectSum(out, 1, terms);
 
@@ -443,7 +494,7 @@ function buildProduct(node) {
 function simplifyOnce(node) {
 
   if (isTerminal(node)) {
-    return node === 'x' ? 'x' : num(Number(node));
+    return isVariable(node) ? node : num(Number(node));
   }
 
   const n = node.child ?
@@ -451,7 +502,7 @@ function simplifyOnce(node) {
     { op: node.op, left: simplifyOnce(node.left), right: simplifyOnce(node.right) };
 
   // constant folding
-  if (!containsX(n)) {
+  if (!containsVariable(n)) {
     const v = evaluateTree(n, 0);
 
     if (Number.isFinite(v)) {
@@ -469,36 +520,11 @@ function simplifyOnce(node) {
     case '*':
       return buildProduct(n);
 
-    case '/': {
-      const r = constValue(n.right);
-
-      if (r !== null && r !== 0) {
-        // u / c  ->  (1/c) * u
-        return buildProduct({ op: '*', left: num(1 / r), right: n.left });
-      }
-
-      if (constValue(n.left) === 0) {
-        return '0';
-      }
-
-      // (c * u) / v  ->  c * (u / v), and c / v  ->  c * (1 / v), so
-      // coefficients merge and like terms such as 2/x + 3/x combine
-      const { coef, rest } = splitCoefficient(n.left);
-
-      if (coef !== 1) {
-        return buildProduct({
-          op: '*',
-          left: num(coef),
-          right: { op: '/', left: rest === null ? '1' : rest, right: n.right }
-        });
-      }
-
-      if (treeToString(n.left) === treeToString(n.right)) {
-        return '1';
-      }
-
-      return n;
-    }
+    case '/':
+      // as a product with negative powers: coefficients move out
+      // (c*u / v -> c * (u / v)), so 2/x + 3/x combine, and common
+      // factors cancel ((u / v) * v -> u, u / u -> 1)
+      return buildProduct(n);
 
     case 'pow': {
       const e = constValue(n.right);
@@ -532,8 +558,8 @@ function simplifyTree(tree, points = null) {
 
   if (points && points.length) {
     for (const p of points) {
-      const a = evaluateTree(tree, p.x);
-      const b = evaluateTree(current, p.x);
+      const a = evaluateTree(tree, pointInput(p));
+      const b = evaluateTree(current, pointInput(p));
 
       if (!Number.isFinite(a)) continue;
 
@@ -621,7 +647,7 @@ function infix(node, format, digits) {
   };
 
   if (isTerminal(node)) {
-    return node === 'x' ? 'x' : formatNumber(node, digits);
+    return isVariable(node) ? node : formatNumber(node, digits);
   }
 
   if (node.child) {
@@ -711,7 +737,10 @@ function latex(node, digits) {
   const paren = (s) => `\\left(${s}\\right)`;
 
   if (isTerminal(node)) {
-    if (node === 'x') return 'x';
+    if (isVariable(node)) {
+      const name = node.replace(/_/g, '\\_');
+      return node.length === 1 ? node : `\\mathit{${name}}`;
+    }
 
     const s = formatNumber(node, digits);
     const m = s.match(/^(-?[\d.]+)e([+-]?\d+)$/);
@@ -763,14 +792,17 @@ function usesOp(node, op) {
   return usesOp(node.left, op) || usesOp(node.right, op);
 }
 
-function exportProgram(tree, format) {
+// `variables` are the function's parameters, in order.
+function exportProgram(tree, format, variables = ['x']) {
+  const params = variables.join(', ');
+
   switch (format) {
     case 'js':
-      return `const f = (x) => ${toInfix(tree, 'js', EXPORT_DIGITS)};`;
+      return `const f = (${params}) => ${toInfix(tree, 'js', EXPORT_DIGITS)};`;
 
     case 'python': {
       const note = usesOp(tree, 'cbrt') ? '  # math.cbrt needs Python 3.11+' : '';
-      return `import math\n\n\ndef f(x):\n    return ${toInfix(tree, 'python', EXPORT_DIGITS)}${note}\n`;
+      return `import math\n\n\ndef f(${params}):\n    return ${toInfix(tree, 'python', EXPORT_DIGITS)}${note}\n`;
     }
 
     case 'latex':
@@ -779,6 +811,116 @@ function exportProgram(tree, format) {
     default:
       return toInfix(tree, 'plain', DISPLAY_DIGITS);
   }
+}
+
+// =========================================================
+// CSV DATASETS
+// =========================================================
+
+const MAX_VARIABLES = 10;
+
+// Words that cannot be used as names in the JavaScript or Python export.
+const RESERVED_NAMES = new Set((
+  'break case catch class const continue debugger default delete do else ' +
+  'export extends false finally for function if import in instanceof new ' +
+  'null return super switch this throw true try typeof var void while with ' +
+  'yield let static enum await implements package protected interface ' +
+  'private public arguments eval undefined NaN Infinity ' +
+  'and as assert async def del elif except from global is lambda nonlocal ' +
+  'not or pass raise None True False math f'
+).split(' '));
+
+// Turn CSV column headers into unique, safe variable names:
+// "Years of experience" -> "Years_of_experience". Names that clash with
+// Math functions or reserved words get a "v_" prefix.
+function variableNames(headers) {
+  const used = new Set();
+
+  return headers.map((h, i) => {
+    let name = String(h == null ? '' : h).trim()
+      .replace(/[^A-Za-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    if (!name) name = `x${i + 1}`;
+    if (/^[0-9]/.test(name)) name = `v_${name}`;
+    if (MATH_NAMES.has(name) || RESERVED_NAMES.has(name)) name = `v_${name}`;
+
+    name = name.slice(0, 40);
+
+    let unique = name;
+    for (let k = 2; used.has(unique); k++) unique = `${name}_${k}`;
+
+    used.add(unique);
+    return unique;
+  });
+}
+
+function splitCsvLine(line) {
+  return line.split(/[,;\t]/).map(cell => cell.trim().replace(/^"(.*)"$/, '$1'));
+}
+
+// Parse CSV text into a header row and numeric rows. A first row that
+// is not all numbers is treated as the header.
+function parseCsv(text) {
+  const lines = String(text).split(/\r?\n/).filter(l => l.trim());
+
+  if (!lines.length) {
+    return { headers: [], rows: [] };
+  }
+
+  const first = splitCsvLine(lines[0]);
+  const hasHeader = first.some(cell => cell === '' || !Number.isFinite(Number(cell)));
+  const width = first.length;
+
+  const headers = hasHeader ?
+    first :
+    first.map((_, i) => (i === width - 1 ? 'y' : `x${i + 1}`));
+
+  const rows = [];
+
+  for (const line of hasHeader ? lines.slice(1) : lines) {
+    const cells = splitCsvLine(line);
+
+    if (cells.length < width) continue;
+
+    const values = cells.slice(0, width).map(Number);
+
+    if (values.every(Number.isFinite)) {
+      rows.push(values);
+    }
+  }
+
+  return { headers, rows };
+}
+
+// Build training points from a parsed CSV: `targetIndex` is the column
+// to predict, every other column becomes an input variable. With one
+// input the variable is called x (so the 2-D graph and formulas work
+// as before); with several, inputs are named after their headers.
+function datasetFromTable(table, targetIndex = table.headers.length - 1) {
+  const inputIndexes = table.headers
+    .map((_, i) => i)
+    .filter(i => i !== targetIndex)
+    .slice(0, MAX_VARIABLES);
+
+  if (inputIndexes.length <= 1) {
+    const xi = inputIndexes[0];
+    return {
+      variables: ['x'],
+      dataset: table.rows.map(r => ({ x: r[xi], y: r[targetIndex] }))
+    };
+  }
+
+  const variables = variableNames(inputIndexes.map(i => table.headers[i]));
+
+  return {
+    variables,
+    dataset: table.rows.map(r => {
+      const v = {};
+      inputIndexes.forEach((col, k) => { v[variables[k]] = r[col]; });
+      return { v, y: r[targetIndex] };
+    })
+  };
 }
 
 // =========================================================
@@ -842,9 +984,19 @@ function validateConfig(config) {
 
   if (config.dataMode === 'dataset') {
     points = config.dataset || [];
+    const variables = config.variables || ['x'];
 
     if (points.length < 2) {
-      errors.push('Upload a CSV dataset with at least 2 valid x,y rows.');
+      errors.push('Upload a CSV dataset with at least 2 valid rows.');
+    }
+
+    if (
+      !Array.isArray(variables) || variables.length < 1 ||
+      variables.length > MAX_VARIABLES || !variables.every(v => IDENTIFIER.test(v))
+    ) {
+      errors.push(`The dataset needs between 1 and ${MAX_VARIABLES} input columns.`);
+    } else if (variables.length > 1 && !points.every(p => p.v && variables.every(n => Number.isFinite(p.v[n])))) {
+      errors.push('Every dataset row needs a numeric value for each input column.');
     }
   } else {
     if (!isNum(config.minX) || !isNum(config.maxX) || config.minX >= config.maxX) {
@@ -904,6 +1056,16 @@ function normalizeConfig(config) {
 
   if (typeof c.linearScaling !== 'boolean') {
     c.linearScaling = true;
+  }
+
+  // off by default: in benchmarks it did not improve results
+  if (typeof c.constantOptimization !== 'boolean') {
+    c.constantOptimization = false;
+  }
+
+  // formula mode always has the single variable x
+  if (!Array.isArray(c.variables) || !c.variables.length || c.dataMode !== 'dataset') {
+    c.variables = ['x'];
   }
 
   return c;
@@ -985,30 +1147,58 @@ function sanitizeShare(payload) {
     config.targetFormula = c.targetFormula;
   }
 
+  if (typeof c.targetName === 'string') {
+    config.targetName = c.targetName.slice(0, 100);
+  }
+
+  if (c.speed === 'fast' || c.speed === 'slow') {
+    config.speed = c.speed;
+  }
+
   if (c.dataMode === 'formula' || c.dataMode === 'dataset') {
     config.dataMode = c.dataMode;
   }
 
-  if (typeof c.linearScaling === 'boolean') {
-    config.linearScaling = c.linearScaling;
+  for (const k of ['linearScaling', 'constantOptimization']) {
+    if (typeof c[k] === 'boolean') config[k] = c[k];
   }
 
   if (Array.isArray(c.operators)) {
     config.operators = c.operators.filter(op => OP_ARITY[op]);
   }
 
+  let variables = ['x'];
+
+  if (
+    Array.isArray(c.variables) && c.variables.length >= 1 &&
+    c.variables.length <= MAX_VARIABLES &&
+    c.variables.every(v => typeof v === 'string' && IDENTIFIER.test(v)) &&
+    new Set(c.variables).size === c.variables.length
+  ) {
+    variables = c.variables;
+  }
+
   if (Array.isArray(c.dataset)) {
-    config.dataset = c.dataset
+    const width = variables.length + 1;
+    const rows = c.dataset
       .slice(0, MAX_SHARED_POINTS)
-      .filter(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite))
-      .map(([x, y]) => ({ x, y }));
+      .filter(p => Array.isArray(p) && p.length === width && p.every(Number.isFinite));
+
+    config.variables = variables;
+    config.dataset = variables.length === 1 ?
+      rows.map(([x, y]) => ({ x, y })) :
+      rows.map(r => {
+        const v = {};
+        variables.forEach((name, i) => { v[name] = r[i]; });
+        return { v, y: r[width - 1] };
+      });
   }
 
   const result = { config };
 
   const model = decompressTree(payload.model);
 
-  if (model && isValidTree(model)) {
+  if (model && isValidTree(model, config.variables || ['x'])) {
     result.model = model;
   }
 
@@ -1031,8 +1221,12 @@ function buildSharePayload({ config, model, r2, generation, fileName }) {
   }
 
   if (config.dataMode === 'dataset') {
+    const variables = config.variables || ['x'];
+
     if ((dataset || []).length <= MAX_SHARED_POINTS) {
-      payload.config.dataset = dataset.map(p => [p.x, p.y]);
+      payload.config.dataset = variables.length === 1 ?
+        dataset.map(p => [p.x, p.y]) :
+        dataset.map(p => [...variables.map(n => p.v[n]), p.y]);
     } else {
       payload.datasetOmitted = true;
     }
@@ -1049,9 +1243,13 @@ if (typeof module !== 'undefined' && module.exports) {
     DEFAULT_SAMPLE_COUNT,
     MAX_TREE_DEPTH_LIMIT,
     MAX_SHARED_POINTS,
+    MAX_VARIABLES,
     compileFormula,
     generateFormulaSamples,
     evaluateTree,
+    pointInput,
+    isVariable,
+    treeVariables,
     treeSize,
     treeDepth,
     treeToString,
@@ -1063,6 +1261,9 @@ if (typeof module !== 'undefined' && module.exports) {
     toInfix,
     toLatex,
     exportProgram,
+    variableNames,
+    parseCsv,
+    datasetFromTable,
     validateConfig,
     normalizeConfig,
     encodeShare,

@@ -52,11 +52,17 @@ const DEFAULTS = {
   treeDepth: 4,
   maxTreeDepth: 8,
   linearScaling: true,
-  dataMode: 'formula'
+  constantOptimization: false,
+  speed: 'fast',
+  dataMode: 'formula',
+  variables: ['x'],
+  targetName: ''
 };
 
 const MAX_SERIES_POINTS = 1000;
+const MAX_TIMELINE = 300;
 const HISTORY_LENGTH = 5;
+const REPLAY_INTERVAL_MS = 450;
 
 const OP_LABELS = { '*': '×', '/': '÷', '-': '−' };
 
@@ -121,11 +127,23 @@ const Home = {
         </div>
 
         <p class="hint">
-          A header row, then two numeric columns <code>x,y</code>.
+          A header row, then numeric columns. One column is the target to predict (the last one by default);
+          every other column becomes an input variable (up to {{ maxVariables }}).
+          With a single input the variable is called <code>x</code>.
         </p>
 
+        <div v-if="csvTable && csvTable.headers.length > 2" class="field-row">
+          <label class="field-label" for="target-column">Target column</label>
+          <select id="target-column" v-model.number="targetColumn" @change="applyTable" :disabled="isRunning">
+            <option v-for="(h, i) in csvTable.headers" :key="i" :value="i">{{ h }}</option>
+          </select>
+        </div>
+
         <div v-if="uploadedFileName" class="code">
-          Loaded {{ uploadedFileName }}: {{ uploadedData.length }} points
+          Loaded {{ uploadedFileName }}: {{ uploadedData.length }} rows
+          <template v-if="isMultiVariable">
+            · inputs: {{ variables.join(', ') }}<template v-if="targetName"> · target: {{ targetName }}</template>
+          </template>
         </div>
       </template>
     </section>
@@ -149,6 +167,28 @@ const Home = {
             </span>
             <span class="hint">
               Score each program as a + b·f(x) with the best-fitting a and b, so evolution only has to find the shape.
+            </span>
+          </label>
+
+          <label class="setting">
+            <span class="field-label">
+              <input type="checkbox" v-model="constantOptimization" :disabled="isRunning">
+              Constant optimisation
+            </span>
+            <span class="hint">
+              Each generation, fine-tune the numbers inside a random 10% of programs (such as the 1/3 in exp(x/3)).
+              Experimental and off by default: in our benchmark it did not improve results.
+            </span>
+          </label>
+
+          <label class="setting">
+            <span class="field-label">Speed</span>
+            <select v-model="speed" :disabled="isRunning">
+              <option value="fast">Fast</option>
+              <option value="slow">Slow: one generation at a time</option>
+            </select>
+            <span class="hint">
+              Fast runs many generations between screen updates. Slow is for watching each step.
             </span>
           </label>
         </div>
@@ -214,12 +254,36 @@ const Home = {
         <div class="stat"><span>Generation</span><b>{{ generation }}</b></div>
         <div class="stat"><span>Best R²</span><b>{{ formatR2(bestR2) }}</b></div>
         <div class="stat"><span>Program size</span><b>{{ bestSize ?? '–' }}</b></div>
+        <div class="stat"><span>Speed</span><b>{{ speedText }}</b></div>
       </div>
 
       <template v-if="best">
-        <h3>Best program</h3>
+        <h3>{{ replayEntry ? 'Replay: best program at generation ' + replayEntry.g : 'Best program' }}</h3>
 
-        <div class="code expression">y = {{ expression }}</div>
+        <div class="code expression" :class="{ replaying: replayEntry }">y = {{ expression }}</div>
+
+        <div v-if="timeline.length > 1 && !isRunning" class="replay">
+          <button class="small" @click="toggleReplay" :aria-label="replayTimer ? 'Pause replay' : 'Play replay'">
+            {{ replayTimer ? '⏸ Pause' : '▶ Replay' }}
+          </button>
+
+          <input
+            type="range"
+            min="0"
+            :max="timeline.length - 1"
+            step="1"
+            :value="replayIndex ?? timeline.length - 1"
+            @input="seekReplay(Number($event.target.value))"
+            aria-label="Replay position"
+          >
+
+          <span class="hint">
+            {{ replayEntry ? 'generation ' + replayEntry.g + ' · R² ' + formatR2(replayEntry.r2) : 'latest' }}
+            · {{ timeline.length }} improvements
+          </span>
+
+          <button v-if="replayEntry" class="small" @click="stopReplay">Back to latest</button>
+        </div>
 
         <div class="export">
           <div class="tabs" role="tablist">
@@ -242,7 +306,11 @@ const Home = {
 
       <div class="charts">
         <figure>
-          <figcaption>
+          <figcaption v-if="isMultiVariable">
+            Fit: <span class="key cyan">predicted vs actual</span> for each row; points on the
+            <span class="key red">diagonal</span> are predicted exactly
+          </figcaption>
+          <figcaption v-else>
             Fit: <span class="key cyan">data</span> and <span class="key red">best program</span>
           </figcaption>
           <canvas ref="canvas" width="600" height="300"></canvas>
@@ -254,6 +322,7 @@ const Home = {
             <span class="key red">best</span>
             <span class="key grey">median</span>
             <span class="key green">target</span>
+            <span v-if="replayEntry" class="key blue">replay</span>
           </figcaption>
           <canvas ref="progress" width="600" height="300"></canvas>
         </figure>
@@ -289,7 +358,7 @@ const Home = {
         </svg>
 
         <p class="hint">
-          Orange: operators · green: the variable x · khaki: constants.
+          Orange: operators · green: variables · khaki: constants.
         </p>
       </template>
 
@@ -314,6 +383,9 @@ const Home = {
       ...JSON.parse(JSON.stringify(DEFAULTS)),
       uploadedData: [],
       uploadedFileName: '',
+      csvTable: null,
+      targetColumn: 0,
+      maxVariables: MAX_VARIABLES,
 
       // results
       generation: 0,
@@ -323,6 +395,10 @@ const Home = {
       bestSize: null,
       history: [],
       series: [],
+      timeline: [],
+      replayIndex: null,
+      replayTimer: null,
+      gensPerSecond: null,
 
       // ui
       evolutionState: 'idle', // idle | running | paused
@@ -348,12 +424,36 @@ const Home = {
 
   computed: {
 
+    activeVariables() {
+      return this.dataMode === 'dataset' ? this.variables : ['x'];
+    },
+
+    isMultiVariable() {
+      return this.activeVariables.length > 1;
+    },
+
+    replayEntry() {
+      return this.replayIndex === null ? null : this.timeline[this.replayIndex] || null;
+    },
+
+    // the program on screen: the replay position, or the latest best
+    displayModel() {
+      return this.replayEntry ? this.replayEntry.model : this.best;
+    },
+
     expression() {
-      return this.best ? toInfix(this.best) : '';
+      return this.displayModel ? toInfix(this.displayModel) : '';
     },
 
     exportText() {
-      return this.best ? exportProgram(this.best, this.exportFormat) : '';
+      return this.displayModel ?
+        exportProgram(this.displayModel, this.exportFormat, this.activeVariables) :
+        '';
+    },
+
+    speedText() {
+      if (!this.gensPerSecond) return '–';
+      return `${this.gensPerSecond >= 10 ? Math.round(this.gensPerSecond) : this.gensPerSecond.toFixed(1)} gen/s`;
     },
 
     sampleData() {
@@ -376,7 +476,7 @@ const Home = {
     },
 
     treeLayout() {
-      return layoutTree(this.best);
+      return layoutTree(this.displayModel);
     },
 
     isRunning() {
@@ -412,6 +512,14 @@ const Home = {
 
     targetR2() {
       this.drawProgress();
+    },
+
+    displayModel() {
+      this.drawCanvas();
+    },
+
+    replayIndex() {
+      this.drawProgress();
     }
   },
 
@@ -441,6 +549,8 @@ const Home = {
   },
 
   beforeUnmount() {
+    this.pauseReplay();
+
     if (this.worker) {
       this.worker.terminate();
     }
@@ -534,6 +644,7 @@ const Home = {
         bestSize: this.bestSize,
         history: JSON.parse(JSON.stringify(this.history)),
         series: this.series.map(p => [p.g, p.best, p.median]),
+        timeline: this.timeline.map(t => [t.g, t.r2, t.fitness, compressTree(t.model)]),
         config: {
           ...this.buildConfig(),
           uploadedFileName: this.uploadedFileName
@@ -593,6 +704,10 @@ const Home = {
       this.bestSize = state.bestSize ?? (this.best ? treeSize(this.best) : null);
       this.history = (state.history || []).slice(0, HISTORY_LENGTH);
       this.series = (state.series || []).map(([g, best, median]) => ({ g, best, median }));
+      this.timeline = (state.timeline || []).map(([g, r2, fitness, model]) => ({
+        g, r2, fitness, model: decompressTree(model)
+      }));
+      this.replayIndex = null;
 
       this.evolutionState = 'paused';
       this.statusMessage = `Restored session at generation ${this.generation}. Press Resume to continue.`;
@@ -642,7 +757,11 @@ const Home = {
         treeDepth: this.treeDepth,
         maxTreeDepth: this.maxTreeDepth,
         linearScaling: this.linearScaling,
+        constantOptimization: this.constantOptimization,
+        speed: this.speed,
         dataMode: this.dataMode,
+        variables: [...this.activeVariables],
+        targetName: this.targetName,
         dataset: JSON.parse(JSON.stringify(this.uploadedData))
       };
     },
@@ -665,6 +784,10 @@ const Home = {
       this.bestSize = null;
       this.history = [];
       this.series = [];
+      this.timeline = [];
+      this.stopReplay();
+      this.gensPerSecond = null;
+      this.speedMark = null;
       this.generation = 0;
       this.latestPopulation = [];
       this.lastCheckpointFitness = Infinity;
@@ -706,7 +829,8 @@ const Home = {
       this.evolutionState = 'paused';
       this.statusMessage = 'Paused.';
 
-      // make sure the paused state survives a browser shutdown
+      // make sure the paused state survives a browser shutdown (saved
+      // again with the exact population when the worker confirms)
       this.saveCheckpoint(true);
     },
 
@@ -722,9 +846,11 @@ const Home = {
         return;
       }
 
+      this.stopReplay();
       this.evolutionState = 'running';
       this.statusMessage = '';
       this.shareUrl = '';
+      this.speedMark = null;
 
       this.worker.postMessage({ type: 'resume', config });
     },
@@ -776,51 +902,81 @@ const Home = {
       this.worker.onmessage = (e) => {
         const msg = e.data;
 
+        if (msg.type !== 'update' && msg.type !== 'finished' && msg.type !== 'stopped') {
+          return;
+        }
+
+        this.ingest(msg);
+
         if (msg.type === 'update') {
-          this.applyResult(msg);
-
-          this.latestPopulation = msg.population;
-
-          this.recordProgress(msg.generation, msg.r2, msg.medianR2);
-
-          this.history.unshift({
-            generation: msg.generation,
-            r2: msg.r2,
-            expression: toInfix(msg.model)
-          });
-
-          if (this.history.length > HISTORY_LENGTH) {
-            this.history.pop();
-          }
-
-          this.drawCanvas();
-          this.drawProgress();
-
           this.saveBest();
           this.saveCheckpoint();
+          return;
         }
 
         if (msg.type === 'finished') {
-          this.applyResult(msg);
-
           this.evolutionState = 'paused';
 
           this.statusMessage = msg.reason === 'targetReached' ?
             `Target R² reached at generation ${msg.generation}.` :
             `Stopped at Max Generations (${msg.generation}). Increase Max Generations and press Resume to continue.`;
-
-          this.drawCanvas();
-          this.saveCheckpoint(true);
         }
+
+        this.saveBest();
+        this.saveCheckpoint(true);
       };
     },
 
-    applyResult(msg) {
+    // Take in one worker message: it may cover several generations.
+    ingest(msg) {
       this.best = msg.model;
       this.bestFitness = msg.fitness;
       this.bestR2 = msg.r2;
       this.bestSize = msg.size;
+
+      this.measureSpeed(msg.generation);
       this.generation = msg.generation;
+
+      if (msg.population) {
+        this.latestPopulation = msg.population;
+      }
+
+      for (const [g, best, median] of msg.progress || []) {
+        this.recordProgress(g, best, median);
+      }
+
+      for (const entry of msg.timeline || []) {
+        this.recordTimeline(entry);
+      }
+
+      if (!this.history.length || this.history[0].generation !== msg.generation) {
+        this.history.unshift({
+          generation: msg.generation,
+          r2: msg.r2,
+          expression: toInfix(msg.model)
+        });
+
+        if (this.history.length > HISTORY_LENGTH) {
+          this.history.pop();
+        }
+      }
+
+      this.drawCanvas();
+      this.drawProgress();
+    },
+
+    measureSpeed(generation) {
+      const now = performance.now();
+      const mark = this.speedMark;
+
+      this.speedMark = { t: now, g: generation };
+
+      if (!mark || generation <= mark.g || now <= mark.t) return;
+
+      const rate = (generation - mark.g) / ((now - mark.t) / 1000);
+
+      // smooth so the number is readable
+      this.gensPerSecond = this.gensPerSecond ? 0.8 * this.gensPerSecond + 0.2 * rate : rate;
     },
 
     recordProgress(g, best, median) {
@@ -835,6 +991,58 @@ const Home = {
           this.series.push(last);
         }
       }
+    },
+
+    recordTimeline(entry) {
+      this.timeline.push(entry);
+
+      // keep the first and latest entries, thin out the middle
+      if (this.timeline.length > MAX_TIMELINE) {
+        const last = this.timeline.length - 1;
+        this.timeline = this.timeline.filter((_, i) => i === 0 || i === last || i % 2 === 1);
+      }
+    },
+
+    // =========================
+    // REPLAY
+    // =========================
+
+    seekReplay(index) {
+      this.pauseReplay();
+      this.replayIndex = index >= this.timeline.length - 1 ? null : index;
+    },
+
+    toggleReplay() {
+      if (this.replayTimer) {
+        this.pauseReplay();
+        return;
+      }
+
+      // start from the beginning unless paused part-way
+      if (this.replayIndex === null) {
+        this.replayIndex = 0;
+      }
+
+      this.replayTimer = setInterval(() => {
+        if (this.replayIndex === null || this.replayIndex >= this.timeline.length - 1) {
+          this.stopReplay();
+          return;
+        }
+
+        this.replayIndex++;
+      }, REPLAY_INTERVAL_MS);
+    },
+
+    pauseReplay() {
+      if (this.replayTimer) {
+        clearInterval(this.replayTimer);
+        this.replayTimer = null;
+      }
+    },
+
+    stopReplay() {
+      this.pauseReplay();
+      this.replayIndex = null;
     },
 
     // =========================
@@ -892,6 +1100,7 @@ const Home = {
         if (shared.config.dataset) {
           this.uploadedData = shared.config.dataset;
           this.uploadedFileName = shared.fileName || 'Shared dataset';
+          this.csvTable = null;
         }
 
         this.resetResults();
@@ -932,31 +1141,36 @@ const Home = {
 
       if (!file) return;
 
-      this.uploadedFileName = file.name;
-
       const reader = new FileReader();
 
       reader.onload = (e) => {
-        const lines = e.target.result.split(/\r?\n/);
-        const data = [];
+        const table = parseCsv(e.target.result);
 
-        for (let i = 1; i < lines.length; i++) {
-          const parts = lines[i].trim().split(',');
-
-          if (parts.length < 2) continue;
-
-          const x = Number(parts[0]);
-          const y = Number(parts[1]);
-
-          if (Number.isFinite(x) && Number.isFinite(y)) {
-            data.push({ x, y });
-          }
+        if (table.headers.length < 2 || !table.rows.length) {
+          this.errorMessages = ['The CSV needs a header row and at least two numeric columns.'];
+          return;
         }
 
-        this.uploadedData = data;
+        this.errorMessages = [];
+        this.uploadedFileName = file.name;
+        this.csvTable = table;
+        this.targetColumn = table.headers.length - 1;
+        this.applyTable();
       };
 
       reader.readAsText(file);
+    },
+
+    // Rebuild the training data from the uploaded table and the chosen
+    // target column.
+    applyTable() {
+      if (!this.csvTable) return;
+
+      const { variables, dataset } = datasetFromTable(this.csvTable, this.targetColumn);
+
+      this.variables = variables;
+      this.uploadedData = dataset;
+      this.targetName = String(this.csvTable.headers[this.targetColumn] ?? '');
     },
 
     // =========================
@@ -975,6 +1189,11 @@ const Home = {
       const points = this.sampleData || [];
 
       if (!points.length) return;
+
+      if (this.isMultiVariable) {
+        this.drawPredictedVsActual(ctx, canvas, points);
+        return;
+      }
 
       let minX = Infinity;
       let maxX = -Infinity;
@@ -1005,8 +1224,10 @@ const Home = {
       const toScreenX = (x) => padding + ((x - minX) / (maxX - minX)) * w;
       const toScreenY = (y) => canvas.height - padding - ((y - minY) / (maxY - minY)) * h;
 
-      // best program, clipped to the plot area
-      if (this.best) {
+      // best program (or replay position), clipped to the plot area
+      const model = this.displayModel;
+
+      if (model) {
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, canvas.width, canvas.height);
@@ -1018,7 +1239,7 @@ const Home = {
 
         for (let px = 0; px <= w; px++) {
           const x = minX + (px / w) * (maxX - minX);
-          const y = evaluateTree(this.best, x);
+          const y = evaluateTree(model, x);
 
           if (!Number.isFinite(y)) {
             penDown = false;
@@ -1052,6 +1273,78 @@ const Home = {
         ctx.arc(toScreenX(p.x), toScreenY(p.y), 4, 0, Math.PI * 2);
         ctx.fill();
       }
+    },
+
+    // With several inputs there is no single x axis: plot each row's
+    // prediction against its actual value instead.
+    drawPredictedVsActual(ctx, canvas, points) {
+      const model = this.displayModel;
+      const maxPoints = 400;
+      const step = Math.max(1, points.length / maxPoints);
+      const pairs = [];
+
+      for (let i = 0; i < points.length; i += step) {
+        const p = points[Math.floor(i)];
+        const predicted = model ? evaluateTree(model, p.v) : NaN;
+        pairs.push([p.y, predicted]);
+      }
+
+      let lo = Infinity;
+      let hi = -Infinity;
+
+      for (const p of points) {
+        lo = Math.min(lo, p.y);
+        hi = Math.max(hi, p.y);
+      }
+
+      if (lo === hi) {
+        lo -= 1;
+        hi += 1;
+      }
+
+      const pad = 30;
+      const size = Math.min(canvas.width, canvas.height) - pad * 2;
+      const left = (canvas.width - size) / 2;
+      const toX = (v) => left + ((v - lo) / (hi - lo)) * size;
+      const toY = (v) => canvas.height - pad - ((v - lo) / (hi - lo)) * size;
+
+      ctx.save();
+
+      // axes box and labels
+      ctx.strokeStyle = '#ccc';
+      ctx.strokeRect(left, pad, size, size);
+      ctx.fillStyle = '#555';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('actual', left + size / 2, canvas.height - 8);
+      ctx.save();
+      ctx.translate(left - 12, pad + size / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText('predicted', 0, 0);
+      ctx.restore();
+
+      // perfect-prediction diagonal
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(toX(lo), toY(lo));
+      ctx.lineTo(toX(hi), toY(hi));
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.rect(left, pad, size, size);
+      ctx.clip();
+
+      ctx.fillStyle = '#00b7c7';
+
+      for (const [actual, predicted] of pairs) {
+        if (!Number.isFinite(predicted)) continue;
+        ctx.beginPath();
+        ctx.arc(toX(actual), toY(predicted), 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
     },
 
     drawProgress() {
@@ -1153,6 +1446,19 @@ const Home = {
         ctx.arc(toX(last.g), toY(last.best), 3.5, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // replay position
+      if (this.replayEntry) {
+        const x = toX(this.replayEntry.g);
+
+        ctx.strokeStyle = '#3366cc';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, H - bottom);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
     }
   }
 };
@@ -1177,8 +1483,8 @@ function layoutTree(root) {
     if (typeof node === 'string' || typeof node === 'number') {
       item.x = pad + nextLeaf * unit;
       nextLeaf++;
-      item.label = node === 'x' ? 'x' : formatNumber(node, 4);
-      item.color = node === 'x' ? 'lightgreen' : 'khaki';
+      item.label = isVariable(node) ? node : formatNumber(node, 4);
+      item.color = isVariable(node) ? 'lightgreen' : 'khaki';
       return item;
     }
 

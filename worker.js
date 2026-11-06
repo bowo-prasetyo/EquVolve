@@ -1,12 +1,31 @@
 // Genetic Programming evolution engine (runs inside a Web Worker).
 // Shared helpers from shared.js: OP_ARITY, generateFormulaSamples,
-// evaluateTree, treeSize, treeDepth, treeToString, scaledTree,
-// simplifyTree, normalizeConfig.
+// evaluateTree, pointInput, isConstant, treeSize, treeDepth,
+// treeToString, scaledTree, simplifyTree, normalizeConfig.
 importScripts('shared.js');
 
 const IMMIGRANT_RATE = 0.1;
-const LOOP_DELAY_MS = 50;
 const COMPLEXITY_PENALTY = 0.001;
+
+// Speed: "fast" runs as many generations as fit in BATCH_MS before
+// sending one update; "slow" sends every generation with a pause, for
+// watching evolution step by step.
+const SPEEDS = {
+  fast: { batchMs: 40, delayMs: 5 },
+  slow: { batchMs: 0, delayMs: 150 }
+};
+
+// The full population is only needed for checkpoints, so it is sent
+// every POPULATION_EVERY generations (and on stop and finish).
+const POPULATION_EVERY = 10;
+
+// Constant optimisation (opt-in): each generation, a random 10% of the
+// population gets a short (1+1) evolution strategy on its constants.
+// Benchmarked alternatives that polish the best 1-3 programs instead
+// were clearly worse: the polished leaders take over the population.
+const CONSTANT_OPT_RATE = 0.1;
+const CONSTANT_OPT_STEPS = 10;
+const CONSTANT_OPT_PROGRAMS = 3; // for mode 'top
 
 // Koza's rule: pick an internal node as a crossover point 90% of the
 // time, so crossover moves meaningful structure instead of leaves.
@@ -39,8 +58,16 @@ let tournamentSize = 5;
 let initDepth = 4;   // depth of randomly generated trees
 let maxDepth = 8;    // hard limit for evolved trees
 let linearScaling = true;
+let constantOptimization = false;
+let variables = ['x'];
 let dataMode = 'formula';
 let dataset = [];
+let batchMs = SPEEDS.fast.batchMs;
+let delayMs = SPEEDS.fast.delayMs;
+let populationEvery = POPULATION_EVERY;
+// mode 'random' (default) or 'top' (the best `programs`); kept
+// configurable for benchmarking
+let constOpt = { mode: 'random', programs: CONSTANT_OPT_PROGRAMS, steps: CONSTANT_OPT_STEPS, rate: CONSTANT_OPT_RATE };
 
 // Training points, computed once per config (not once per evaluation).
 let points = [];
@@ -51,6 +78,15 @@ let population = [];
 let running = false;
 let generation = 0;
 let loopTimer = null;
+
+// Per-generation results gathered during a batch, sent with the next
+// update: progress points, and timeline entries (the best program each
+// time it changes) for the replay.
+let pendingProgress = [];
+let pendingTimeline = [];
+let lastBestKey = null;
+let lastPopulationSent = -Infinity;
+let current = null; // { best, result, medianR2 } of the latest generation
 
 // Keyed by tree structure. Kept across generations (elites and clones
 // are not re-evaluated) and cleared whenever the training data changes.
@@ -90,7 +126,9 @@ function randomConstant() {
 }
 
 function randomTerminal() {
-  return Math.random() < 0.5 ? 'x' : randomConstant();
+  return Math.random() < 0.5 ?
+    variables[randomInt(variables.length)] :
+    randomConstant();
 }
 
 function randomOperator(arity = null) {
@@ -146,17 +184,27 @@ function randomImmigrant() {
 
 function buildPoints() {
 
+  let pts;
+
   if (dataMode === 'dataset') {
-    return dataset.filter(
-      p => Number.isFinite(p.x) && Number.isFinite(p.y)
+    pts = dataset.filter(p =>
+      Number.isFinite(p.y) &&
+      (p.v ? variables.every(n => Number.isFinite(p.v[n])) : Number.isFinite(p.x))
     );
+  } else {
+    try {
+      pts = generateFormulaSamples(targetFormula, minX, maxX, sampleCount);
+    } catch (e) {
+      pts = [];
+    }
   }
 
-  try {
-    return generateFormulaSamples(targetFormula, minX, maxX, sampleCount);
-  } catch (e) {
-    return [];
+  // the evaluation input, resolved once
+  for (const p of pts) {
+    p.in = pointInput(p);
   }
+
+  return pts;
 }
 
 // R² of the program on the training points. With linear scaling the
@@ -182,7 +230,7 @@ function fitness(program) {
   let meanF = 0;
 
   for (let i = 0; i < n; i++) {
-    const v = evaluateTree(program, points[i].x);
+    const v = evaluateTree(program, points[i].in);
 
     if (!Number.isFinite(v)) {
       return invalid;
@@ -257,7 +305,22 @@ function modelOf(program) {
     model = scaledTree(program, a, b);
   }
 
-  return simplifyTree(model, points);
+  return dropNegligibleOffset(simplifyTree(model, points));
+}
+
+// Remove a trailing "+ c" / "- c" that is floating-point noise relative
+// to the data (e.g. "- 2.2e-16" left over after constants cancel).
+function dropNegligibleOffset(model) {
+  const scale = Math.abs(meanY) + Math.sqrt(ssTot / (points.length || 1));
+
+  if (
+    typeof model === 'object' && (model.op === '+' || model.op === '-') &&
+    isConstant(model.right) && Math.abs(Number(model.right)) <= 1e-9 * scale
+  ) {
+    return model.left;
+  }
+
+  return model;
 }
 
 // =========================================================
@@ -362,7 +425,7 @@ function pointMutation(tree) {
   const node = target.node;
 
   if (typeof node === 'string') {
-    if (node !== 'x' && Math.random() < 0.7) {
+    if (isConstant(node) && Math.random() < 0.7) {
       // multi-scale step (coarse, medium or fine) so constants can be
       // both moved far and fine-tuned
       const c = Number(node);
@@ -390,6 +453,93 @@ function mutate(tree) {
 }
 
 // =========================================================
+// CONSTANT OPTIMISATION
+// =========================================================
+
+function gaussian() {
+  const u = 1 - Math.random();
+  const v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// (1+1) evolution strategy on a program's constants: perturb them all
+// with Gaussian noise, keep the change if fitness improves, and adapt
+// each step size (grow on success, shrink on failure). Returns an
+// improved copy of the program, or the program itself.
+function optimizeConstants(tree, steps) {
+  const start = getFitness(tree).totalFitness;
+
+  if (!Number.isFinite(start)) {
+    return tree;
+  }
+
+  const { holder, nodes } = listNodes(clone(tree));
+  const slots = nodes.filter(n => isConstant(n.node));
+
+  if (!slots.length) {
+    return tree;
+  }
+
+  let values = slots.map(n => Number(n.node));
+  const sigma = values.map(v => 0.1 * Math.max(1, Math.abs(v)));
+  let best = start;
+
+  const write = (vals) => {
+    slots.forEach((n, i) => n.set(String(Number(vals[i].toPrecision(10)))));
+  };
+
+  for (let s = 0; s < steps; s++) {
+    const candidate = values.map((v, i) => v + sigma[i] * gaussian());
+
+    write(candidate);
+
+    const f = fitness(holder.root).totalFitness;
+
+    if (f < best) {
+      best = f;
+      values = candidate;
+      for (let i = 0; i < sigma.length; i++) sigma[i] *= 1.5;
+    } else {
+      for (let i = 0; i < sigma.length; i++) sigma[i] *= 0.9;
+    }
+  }
+
+  if (best >= start) {
+    return tree;
+  }
+
+  write(values);
+
+  return holder.root;
+}
+
+// Optimise constants in place (Lamarckian: the improved constants are
+// inherited): a random share of the population, or the best few.
+function optimizeTopConstants() {
+  const seen = new Set();
+  let done = 0;
+
+  if (constOpt.mode === 'random') {
+    for (let i = 0; i < population.length; i++) {
+      if (Math.random() < constOpt.rate) {
+        population[i] = optimizeConstants(population[i], constOpt.steps);
+      }
+    }
+    return;
+  }
+
+  for (let i = 0; i < population.length && done < constOpt.programs; i++) {
+    const key = treeToString(population[i]);
+
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    population[i] = optimizeConstants(population[i], constOpt.steps);
+    done++;
+  }
+}
+
+// =========================================================
 // EVOLUTION LOOP
 // =========================================================
 
@@ -407,26 +557,38 @@ function generationPlan(size) {
   return { eliteCount, immigrantCount, offspringCount };
 }
 
+// Send the latest generation's best program, plus everything gathered
+// since the previous message.
 function report(type, extra = {}) {
-  const best = population[0];
-  const result = getFitness(best);
+  const { best, result } = current;
   const model = modelOf(best);
 
-  postMessage({
+  const message = {
     type,
     best,
     model,
     fitness: result.totalFitness,
     rawError: result.rawError,
     r2: result.r2,
+    medianR2: current.medianR2,
     // size of the program as shown to the user
     size: treeSize(model),
     generation,
     expression: treeToString(best),
+    progress: pendingProgress,
+    timeline: pendingTimeline,
     ...extra
-  });
+  };
 
-  return result;
+  if (type !== 'update' || generation - lastPopulationSent >= populationEvery) {
+    message.population = clone(population);
+    lastPopulationSent = generation;
+  }
+
+  pendingProgress = [];
+  pendingTimeline = [];
+
+  postMessage(message);
 }
 
 function finish(reason) {
@@ -440,29 +602,39 @@ function sortPopulation() {
   );
 }
 
-function evolve() {
-
-  generation++;
-
+// Score the current population and record the generation's results.
+function assess() {
   sortPopulation();
 
+  if (constantOptimization) {
+    optimizeTopConstants();
+    sortPopulation();
+  }
+
+  const best = population[0];
+  const result = getFitness(best);
   const median = getFitness(population[Math.floor(population.length / 2)]);
 
-  const result = report('update', {
-    medianR2: median.r2,
-    population: clone(population)
-  });
+  current = { best, result, medianR2: median.r2 };
 
-  if (result.r2 >= targetR2) {
-    finish('targetReached');
-    return;
+  pendingProgress.push([generation, result.r2, median.r2]);
+
+  const key = treeToString(best);
+
+  if (key !== lastBestKey) {
+    lastBestKey = key;
+    pendingTimeline.push({
+      g: generation,
+      r2: result.r2,
+      fitness: result.totalFitness,
+      model: modelOf(best)
+    });
   }
 
-  if (generation >= maxGenerations) {
-    finish('maxGenerations');
-    return;
-  }
+  return result;
+}
 
+function breed() {
   const plan = generationPlan(populationSize);
   const next = [];
 
@@ -497,6 +669,28 @@ function evolve() {
   population = next;
 }
 
+// One generation. Returns false when the run has finished.
+function evolve() {
+
+  generation++;
+
+  const result = assess();
+
+  if (result.r2 >= targetR2) {
+    finish('targetReached');
+    return false;
+  }
+
+  if (generation >= maxGenerations) {
+    finish('maxGenerations');
+    return false;
+  }
+
+  breed();
+
+  return true;
+}
+
 function stopLoop() {
   running = false;
 
@@ -506,15 +700,23 @@ function stopLoop() {
   }
 }
 
+// Run generations for up to batchMs (at least one), then send a single
+// update, so fast runs are not limited by how often the page redraws.
 function loop() {
   loopTimer = null;
 
   if (!running) return;
 
-  evolve();
+  const started = Date.now();
+  let keepGoing;
 
-  if (running) {
-    loopTimer = setTimeout(loop, LOOP_DELAY_MS);
+  do {
+    keepGoing = evolve();
+  } while (keepGoing && running && Date.now() - started < batchMs);
+
+  if (keepGoing && running) {
+    report('update');
+    loopTimer = setTimeout(loop, delayMs);
   }
 }
 
@@ -525,7 +727,7 @@ function startLoop() {
   // Already at the generation limit: say so instead of silently
   // doing nothing.
   if (generation >= maxGenerations) {
-    sortPopulation();
+    assess();
     finish('maxGenerations');
     return;
   }
@@ -564,11 +766,18 @@ function applyConfig(rawConfig) {
   initDepth = config.treeDepth;
   maxDepth = Math.max(config.maxTreeDepth, initDepth);
   linearScaling = config.linearScaling;
+  constantOptimization = config.constantOptimization;
   dataMode = config.dataMode;
-  dataset = (config.dataset || []).map(p => ({
-    x: Number(p.x),
-    y: Number(p.y)
-  }));
+  variables = config.variables;
+  dataset = (config.dataset || []).map(p => (p.v ?
+    { v: Object.fromEntries(variables.map(n => [n, Number(p.v[n])])), y: Number(p.y) } :
+    { x: Number(p.x), y: Number(p.y) }));
+
+  const speed = SPEEDS[config.speed] || SPEEDS.fast;
+  batchMs = config.batchMs ?? speed.batchMs;
+  delayMs = config.delayMs ?? speed.delayMs;
+  populationEvery = config.populationEvery ?? POPULATION_EVERY;
+  constOpt = { ...constOpt, ...(config.constOpt || {}) };
 
   points = buildPoints();
 
@@ -576,6 +785,7 @@ function applyConfig(rawConfig) {
   ssTot = points.reduce((s, p) => s + (p.y - meanY) ** 2, 0);
 
   fitnessCache.clear();
+  lastBestKey = null;
 }
 
 // Drop malformed individuals (e.g. from an old checkpoint) and top up.
@@ -595,11 +805,21 @@ onmessage = (e) => {
     // Apply the config first so the requested population size is used.
     applyConfig(msg.config);
     initPopulation(populationSize);
+    pendingProgress = [];
+    pendingTimeline = [];
+    lastPopulationSent = -Infinity;
     startLoop();
   }
 
   if (msg.type === 'stop') {
+    const wasRunning = running;
+
     stopLoop();
+
+    // hand the UI the exact state to checkpoint
+    if (wasRunning && current) {
+      report('stopped');
+    }
   }
 
   if (msg.type === 'resume') {

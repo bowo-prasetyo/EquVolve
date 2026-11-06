@@ -357,3 +357,28 @@ svg.tree text {
 .key.red { color: #ff5a5a; }
 .key.grey { color: #bbb; }
 .key.green { color: #4c4; }
+
+.key.blue { color: #6b9bff; }
+
+select {
+  font: inherit;
+  padding: 6px;
+  max-width: 100%;
+}
+
+.replay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.replay input[type="range"] {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.expression.replaying {
+  border-left: 4px solid #6b9bff;
+}

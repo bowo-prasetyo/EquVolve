@@ -60,7 +60,7 @@ test('resume after max generations reports finished instead of hanging', () => {
   // raising the limit lets the run continue from where it was
   w.send({ type: 'resume', config: { ...config, maxGenerations: 6 } });
   w.tick(10);
-  assert.equal(w.updates().at(-1).generation, 6);
+  assert.equal(w.results().at(-1).generation, 6);
 });
 
 test('quick stop -> resume never runs two loops at once', () => {
@@ -94,7 +94,7 @@ test('dataset mode trains on the uploaded points', () => {
   w.tick(300);
 
   assert.equal(w.read('points').length, 30);
-  assert.ok(w.updates().at(-1).r2 > 0.99);
+  assert.ok(w.results().at(-1).r2 > 0.99);
 });
 
 test('restore keeps the generation, waits for resume, and old minError configs still work', () => {
