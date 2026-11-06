@@ -883,7 +883,12 @@ function parseCsv(text) {
 
     if (cells.length < width) continue;
 
-    const values = cells.slice(0, width).map(Number);
+    const kept = cells.slice(0, width);
+
+    // Number('') is 0, so an empty cell would otherwise count as a 0
+    if (kept.some(cell => cell === '')) continue;
+
+    const values = kept.map(Number);
 
     if (values.every(Number.isFinite)) {
       rows.push(values);

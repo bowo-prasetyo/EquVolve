@@ -30,6 +30,13 @@ test('parseCsv reads headers, skips bad rows, and accepts ; or tab separators', 
   assert.equal(noHeader.rows.length, 2);
 });
 
+test('parseCsv skips rows with empty cells instead of reading them as 0', () => {
+  const t = s.parseCsv('a,b,y\n1.5,,3\n1,2,3\n4, ,6\n"",5,6\n7,8,\n9,10,11,\n');
+  // only the complete rows are kept; a trailing separator past the
+  // header's width is still ignored
+  assert.deepEqual(t.rows, [[1, 2, 3], [9, 10, 11]]);
+});
+
 test('datasetFromTable: one input keeps x, several inputs keep their names', () => {
   const single = s.datasetFromTable({ headers: ['YearsExperience', 'Salary'], rows: [[1, 10], [2, 20]] });
   assert.deepEqual(single.variables, ['x']);
