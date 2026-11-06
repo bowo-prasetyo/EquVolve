@@ -120,7 +120,7 @@ test('share links round-trip settings, data and the model', async () => {
     targetFormula: 'sin(x)', minX: -3, maxX: 3, sampleCount: 51, populationSize: 150,
     targetR2: 0.995, maxGenerations: 300, operators: ['+', 'sin'], mutationRate: 0.2,
     crossoverRate: 0.8, elitismRate: 0.02, tournamentSize: 4, treeDepth: 3, maxTreeDepth: 7,
-    linearScaling: false, dataMode: 'dataset', dataset: [{ x: 1, y: 2 }, { x: 2, y: 5 }]
+    linearScaling: false, dataMode: 'dataset', variables: ['x'], dataset: [{ x: 1, y: 2 }, { x: 2, y: 5 }]
   };
 
   const code = await s.encodeShare(s.buildSharePayload({ config, model, r2: 0.97, generation: 12, fileName: 'a.csv' }));
@@ -151,7 +151,7 @@ test('share links drop unknown fields and invalid values', async () => {
   const code = 'j' + Buffer.from(JSON.stringify(evil)).toString('base64url');
   const back = await s.decodeShare(code);
 
-  assert.deepEqual(back.config, { targetFormula: 'x', operators: ['+'], dataset: [{ x: 1, y: 2 }] });
+  assert.deepEqual(back.config, { targetFormula: 'x', operators: ['+'], variables: ['x'], dataset: [{ x: 1, y: 2 }] });
   assert.equal(back.model, undefined);
 });
 
