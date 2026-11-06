@@ -64,7 +64,7 @@ height,width,depth,price
 - Every other column becomes an **input variable**, named after its header. Only the first 10 input columns are used; any after that are ignored. Names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`. A name that starts with a digit, or clashes with a `Math` name or a JavaScript or Python keyword, gets a `v_` prefix (`sin` becomes `v_sin`). Repeated names get `_2`, `_3`, … appended.
 - With a **single input**, the variable is called `x` and the graph plots the data with the fitted curve. With **several inputs** the graph plots each row's prediction against its actual value (up to 400 rows are drawn).
 - Commas, semicolons and tabs all work as separators, and can be mixed. Quoted cells are unquoted, but a quoted cell cannot contain a separator. A first row that is all numbers is treated as data, and the columns are called `x1`, `x2`, … and `y`.
-- Rows with too few cells or a non-numeric value are skipped, and cells beyond the header's width are ignored. Every other row is used for training. **An empty cell (as in `1.5,,3`) is currently read as 0, not skipped**, so remove or fill incomplete rows first.
+- Rows with too few cells, an empty cell (as in `1.5,,3`) or a non-numeric value are skipped, and cells beyond the header's width are ignored. Every other row is used for training.
 
 ### 2. Configure the run
 
@@ -217,8 +217,6 @@ Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVo
 - **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
 - **The replay keeps up to 300 snapshots.** In longer runs, intermediate improvements are thinned out; the first and latest are always kept.
 - **The progress chart keeps up to 1,000 points.** Beyond that, every other point is dropped (the latest is always kept), so very long runs are drawn at a coarser resolution.
-- **Empty CSV cells are read as 0** rather than skipping the row; see [Choose a data source](#1-choose-a-data-source).
-
 ---
 
 ## Example results
