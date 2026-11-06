@@ -115,7 +115,7 @@ test('a formula that needs an operator that is not ticked says so, and one click
 
   // several at once, each named
   await page.locator('#formula').fill('sin(x) * exp(x/3)');
-  await operatorNote(page).filter({ hasText: 'uses sin, exp, which are not ticked' }).waitFor();
+  await operatorNote(page).filter({ hasText: 'uses sin and exp, which are not ticked' }).waitFor();
   await button(page, 'Tick sin exp').click();
   assert.ok(await checked(page, 'sin'));
   assert.ok(await checked(page, 'exp'));

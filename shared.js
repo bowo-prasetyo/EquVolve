@@ -2,6 +2,15 @@
 // (worker.js). Keeping these in one place guarantees that the curve the
 // user sees is computed exactly the way the engine scores it.
 
+// The text of message `key` in the interface's language (see i18n.js,
+// which the page loads first; in Node it is required). Only the page's
+// helpers below call it: the worker never shows text.
+function msg(key, params) {
+  // eslint-disable-next-line no-undef
+  const i18n = typeof I18n !== 'undefined' ? I18n : require('./i18n.js');
+  return i18n.t(key, params);
+}
+
 const OP_ARITY = {
   '+': 2,
   '-': 2,
@@ -43,6 +52,34 @@ const MATH_NAMES = new Set(Object.getOwnPropertyNames(Math));
 const FORMULA_TOKEN =
   /\s+|\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|Math\.[A-Za-z_$][\w$]*|[A-Za-z_$][\w$]*|\*\*|[-+*/%(),]/y;
 
+// Why a formula was rejected, as an Error with a `code` and `params`
+// the page puts into words (formulaErrorText); `message` is English, for
+// developers and the tests.
+const FORMULA_ERROR_KEYS = {
+  empty: 'formula.error.empty',
+  unexpectedCharacter: 'formula.error.unexpectedCharacter',
+  unknownName: 'formula.error.unknownName',
+  syntax: 'formula.error.syntax'
+};
+
+function formulaError(code, params = {}) {
+  const error = new Error(code === 'empty' ? 'Formula is empty.' :
+    code === 'unknownName' ? `unknown name "${params.name}"` :
+      code === 'unexpectedCharacter' ? `unexpected character "${params.char}"` :
+        'not a complete expression');
+  error.code = code;
+  error.params = params;
+  return error;
+}
+
+// A formula error in the interface's language. Errors from the
+// JavaScript engine itself (a missing bracket, say) have no code, and
+// their text is in the browser's own words, so they get a general one.
+function formulaErrorText(error) {
+  const key = FORMULA_ERROR_KEYS[error && error.code] || FORMULA_ERROR_KEYS.syntax;
+  return msg(key, (error && error.params) || {});
+}
+
 function checkFormulaSyntax(source) {
   FORMULA_TOKEN.lastIndex = 0;
 
@@ -51,7 +88,7 @@ function checkFormulaSyntax(source) {
     const match = FORMULA_TOKEN.exec(source);
 
     if (!match) {
-      throw new Error(`unexpected character "${source[start]}"`);
+      throw formulaError('unexpectedCharacter', { char: source[start] });
     }
 
     const token = match[0];
@@ -60,7 +97,7 @@ function checkFormulaSyntax(source) {
       const name = token.startsWith('Math.') ? token.slice(5) : token;
 
       if (token !== 'x' && !MATH_NAMES.has(name)) {
-        throw new Error(`unknown name "${token}"`);
+        throw formulaError('unknownName', { name: token });
       }
     }
   }
@@ -74,7 +111,7 @@ function compileFormula(formula) {
   const source = String(formula == null ? '' : formula).trim();
 
   if (!source) {
-    throw new Error('Formula is empty.');
+    throw formulaError('empty');
   }
 
   checkFormulaSyntax(source);
@@ -922,7 +959,8 @@ function csvNumber(cell, decimalComma) {
 
 // Parse CSV text into a header row and numeric rows. A first row that
 // is not all numbers is treated as the header. Rows that cannot be used
-// are listed in `skipped` as { line, reason }, with `line` the row's
+// are listed in `skipped` as { line, reason }, with `reason` one of
+// CSV_SKIP_REASONS and `line` the row's
 // line number in the file (1 = the first line), so the page can say
 // which rows it left out and why. `delimiter` is the separator found
 // (see detectCsvDelimiter), and `decimalComma` is true when at least
@@ -956,7 +994,7 @@ function parseCsv(text) {
     const cells = split(line);
 
     if (cells.length < width) {
-      skipped.push({ line: number, reason: 'missing cells' });
+      skipped.push({ line: number, reason: 'missingCells' });
       continue;
     }
 
@@ -964,7 +1002,7 @@ function parseCsv(text) {
     // width means the columns do not line up, so the row is not used
     // rather than being read into the wrong columns.
     if (cells.slice(width).some(cell => cell !== '')) {
-      skipped.push({ line: number, reason: 'too many cells' });
+      skipped.push({ line: number, reason: 'tooManyCells' });
       continue;
     }
 
@@ -972,7 +1010,7 @@ function parseCsv(text) {
 
     // Number('') is 0, so an empty cell would otherwise count as a 0
     if (kept.some(cell => cell === '')) {
-      skipped.push({ line: number, reason: 'an empty cell' });
+      skipped.push({ line: number, reason: 'emptyCell' });
       continue;
     }
 
@@ -982,7 +1020,7 @@ function parseCsv(text) {
       rows.push(values);
       if (commaDecimals && kept.some(cell => DECIMAL_COMMA.test(cell))) decimalComma = true;
     } else {
-      skipped.push({ line: number, reason: 'text instead of a number' });
+      skipped.push({ line: number, reason: 'notNumber' });
     }
   }
 
@@ -995,11 +1033,20 @@ function parseCsv(text) {
 function describeCsvFormat(table) {
   if (!table || !table.delimiter || table.delimiter === ',') return '';
 
-  const by = table.delimiter === '\t' ? 'tabs' : 'semicolons';
-  return table.decimalComma ?
-    `Separated by ${by}, with decimal commas (1,5 is read as 1.5).` :
-    `Separated by ${by}.`;
+  if (table.delimiter === '\t') {
+    return msg(table.decimalComma ? 'csv.format.tabDecimalComma' : 'csv.format.tab');
+  }
+
+  return msg(table.decimalComma ? 'csv.format.semicolonDecimalComma' : 'csv.format.semicolon');
 }
+
+// The words for each reason parseCsv skips a row.
+const CSV_SKIP_REASONS = {
+  missingCells: 'csv.reason.missingCells',
+  tooManyCells: 'csv.reason.tooManyCells',
+  emptyCell: 'csv.reason.emptyCell',
+  notNumber: 'csv.reason.notNumber'
+};
 
 // A short summary of parseCsv's skipped rows, such as
 // "Skipped 3 rows: lines 4 and 9 (an empty cell), line 7 (text instead
@@ -1013,17 +1060,22 @@ function describeSkippedRows(skipped, maxLines = 5) {
     byReason.get(reason).push(line);
   }
 
-  const parts = [...byReason].map(([reason, lines]) => {
+  const groups = [...byReason].map(([reason, lines]) => {
     const shown = lines.slice(0, maxLines);
     const more = lines.length - shown.length;
-    const list = shown.length === 1 ? String(shown[0]) :
-      more ? `${shown.join(', ')} and ${more} more` :
-        `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
-    return `${lines.length === 1 ? 'line' : 'lines'} ${list} (${reason})`;
+    const items = more ? [...shown, msg('csv.skipped.more', { count: more })] : shown;
+
+    return msg('csv.skipped.group', {
+      count: lines.length,
+      lines: items,
+      reason: CSV_SKIP_REASONS[reason] ? msg(CSV_SKIP_REASONS[reason]) : reason
+    });
   });
 
-  const n = skipped.length;
-  return `Skipped ${n} row${n === 1 ? '' : 's'}: ${parts.join('; ')}.`;
+  return msg('csv.skipped', {
+    count: skipped.length,
+    details: groups.join(msg('csv.skipped.separator'))
+  });
 }
 
 // A small dataset to try the CSV upload with, or to download as a
@@ -1043,15 +1095,24 @@ function sampleCsv() {
   return lines.join('\n') + '\n';
 }
 
-// What an R² means, in words, for people new to it.
-function fitQuality(r2) {
-  if (r2 == null || !Number.isFinite(r2)) return '';
-  if (r2 >= 0.999) return 'Excellent fit';
-  if (r2 >= 0.99) return 'Very good fit';
-  if (r2 >= 0.9) return 'Good fit';
-  if (r2 >= 0.5) return 'Rough fit';
-  if (r2 >= 0) return 'Poor fit';
-  return 'Worse than guessing the average';
+// How good an R² is, as a level: excellent, veryGood, good, rough,
+// poor or worse (than guessing the average). Null for no R².
+function fitLevel(r2) {
+  if (r2 == null || !Number.isFinite(r2)) return null;
+  if (r2 >= 0.999) return 'excellent';
+  if (r2 >= 0.99) return 'veryGood';
+  if (r2 >= 0.9) return 'good';
+  if (r2 >= 0.5) return 'rough';
+  if (r2 >= 0) return 'poor';
+  return 'worse';
+}
+
+// What an R² means, in words, for people new to it: "Very good fit" on
+// its own, or "very good fit" inside a sentence (`inline`).
+function fitQuality(r2, inline = false) {
+  const level = fitLevel(r2);
+  if (!level) return '';
+  return msg(inline ? 'fit.quality.inline' : 'fit.quality', { level });
 }
 
 // Build training points from a parsed CSV: `targetIndex` is the column
@@ -1100,37 +1161,37 @@ function validateConfigFields(config) {
   const inUnit = (v) => isNum(v) && v >= 0 && v <= 1;
 
   if (!isInt(config.populationSize) || config.populationSize < 2) {
-    add('populationSize', 'Population Size must be a whole number of at least 2.');
+    add('populationSize', msg('validation.populationSize'));
   }
 
   if (!isInt(config.maxGenerations) || config.maxGenerations < 1) {
-    add('maxGenerations', 'Max Generations must be a whole number of at least 1.');
+    add('maxGenerations', msg('validation.maxGenerations'));
   }
 
   if (!isNum(config.targetR2) || config.targetR2 > 1) {
-    add('targetR2', 'Target R² must be a number no greater than 1.');
+    add('targetR2', msg('validation.targetR2'));
   }
 
   if (!inUnit(config.mutationRate)) {
-    add('mutationRate', 'Mutation Rate must be between 0 and 1.');
+    add('mutationRate', msg('validation.mutationRate'));
   }
 
   if (!inUnit(config.crossoverRate)) {
-    add('crossoverRate', 'Crossover Rate must be between 0 and 1.');
+    add('crossoverRate', msg('validation.crossoverRate'));
   }
 
   if (!inUnit(config.elitismRate)) {
-    add('elitismRate', 'Elitism Rate must be between 0 and 1.');
+    add('elitismRate', msg('validation.elitismRate'));
   }
 
   if (!isInt(config.tournamentSize) || config.tournamentSize < 1) {
-    add('tournamentSize', 'Tournament Size must be a whole number of at least 1.');
+    add('tournamentSize', msg('validation.tournamentSize'));
   }
 
   const treeDepthOk = isInt(config.treeDepth) && config.treeDepth >= 1 && config.treeDepth <= 12;
 
   if (!treeDepthOk) {
-    add('treeDepth', 'Initial Tree Depth must be a whole number between 1 and 12.');
+    add('treeDepth', msg('validation.treeDepth', { max: 12 }));
   }
 
   if (
@@ -1140,11 +1201,11 @@ function validateConfigFields(config) {
       config.maxTreeDepth < 1 ||
       config.maxTreeDepth > MAX_TREE_DEPTH_LIMIT)
   ) {
-    add('maxTreeDepth', `Max Tree Depth must be a whole number between Initial Tree Depth and ${MAX_TREE_DEPTH_LIMIT}.`);
+    add('maxTreeDepth', msg('validation.maxTreeDepth', { max: MAX_TREE_DEPTH_LIMIT }));
   }
 
   if (!Array.isArray(config.operators) || config.operators.length === 0) {
-    add('operators', 'Select at least one operator.');
+    add('operators', msg('validation.operators'));
   }
 
   let points = [];
@@ -1155,16 +1216,16 @@ function validateConfigFields(config) {
     const variables = config.variables || ['x'];
 
     if (points.length < 2) {
-      add('dataset', 'Upload a CSV dataset with at least 2 valid rows.');
+      add('dataset', msg('validation.datasetRows'));
     }
 
     if (
       !Array.isArray(variables) || variables.length < 1 ||
       variables.length > MAX_VARIABLES || !variables.every(v => IDENTIFIER.test(v))
     ) {
-      add('dataset', `The dataset needs between 1 and ${MAX_VARIABLES} input columns.`);
+      add('dataset', msg('validation.datasetColumns', { max: MAX_VARIABLES }));
     } else if (variables.length > 1 && !points.every(p => p.v && variables.every(n => Number.isFinite(p.v[n])))) {
-      add('dataset', 'Every dataset row needs a numeric value for each input column.');
+      add('dataset', msg('validation.datasetValues'));
     }
   } else {
     dataField = 'targetFormula';
@@ -1172,11 +1233,11 @@ function validateConfigFields(config) {
     const countOk = isInt(config.sampleCount) && config.sampleCount >= 2 && config.sampleCount <= 10000;
 
     if (!rangeOk) {
-      add('xRange', 'X Range minimum must be smaller than the maximum.');
+      add('xRange', msg('validation.xRange'));
     }
 
     if (!countOk) {
-      add('sampleCount', 'Sample Points must be a whole number between 2 and 10000.');
+      add('sampleCount', msg('validation.sampleCount', { max: 10000 }));
     }
 
     // The formula is checked on its own; only its sampling needs a
@@ -1188,13 +1249,13 @@ function validateConfigFields(config) {
         );
 
         if (points.length < 2) {
-          add('targetFormula', 'Formula produces fewer than 2 finite values in the X Range.');
+          add('targetFormula', msg('validation.formulaValues'));
         }
       } else {
         compileFormula(config.targetFormula);
       }
     } catch (e) {
-      add('targetFormula', `Formula is invalid: ${e.message}`);
+      add('targetFormula', msg('validation.formulaInvalid', { reason: formulaErrorText(e) }));
       points = [];
     }
   }
@@ -1203,7 +1264,7 @@ function validateConfigFields(config) {
     const y0 = points[0].y;
 
     if (points.every(p => p.y === y0)) {
-      add(dataField, 'Target values are constant; R² is undefined for a constant target.');
+      add(dataField, msg('validation.constantTarget'));
     }
   }
 
@@ -1737,6 +1798,9 @@ if (typeof module !== 'undefined' && module.exports) {
     exportProgram,
     variableNames,
     parseCsv,
+    CSV_SKIP_REASONS,
+    formulaErrorText,
+    fitLevel,
     detectCsvDelimiter,
     describeCsvFormat,
     splitCsvLine,
