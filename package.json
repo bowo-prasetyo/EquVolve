@@ -1,8 +1,8 @@
 {
-  "name": "browser-genetic-programming",
+  "name": "equvolve",
   "version": "1.2.0",
   "private": true,
-  "description": "Zero-install, in-browser symbolic regression playground built on Genetic Programming.",
+  "description": "EquVolve: watch equations evolve. A zero-install, in-browser symbolic regression playground built on Genetic Programming.",
   "license": "MIT",
   "scripts": {
     "test": "node --test test/*.test.js",

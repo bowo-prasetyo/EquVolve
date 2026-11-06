@@ -1,4 +1,6 @@
-# Browser Genetic Programming
+# EquVolve
+
+*Watch equations evolve.* EquVolve (pronounced **EK-yoo-volve**) joins *equation* and *evolve*.
 
 **A zero-install, in-browser symbolic regression playground.** Give it a formula or a CSV of data and watch Genetic Programming (GP) evolve a mathematical expression that explains the data, live, with the curve fit and expression tree on screen as it happens.
 
@@ -193,7 +195,7 @@ The simplified program is then checked against the original on every training po
 
 ### Persistence
 
-Sessions are stored in the browser's IndexedDB (`gp-db`):
+Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVolve and is kept so older sessions still restore):
 
 - `sessions` holds a single checkpoint of the latest run: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, recent history, the progress chart and the replay timeline (up to 300 snapshots). It is written whenever the best fitness improves, at least every 10 generations, and on Stop, finish, or page unload.
 - `bestPrograms` keeps a log of each new best program. It is not shown in the UI yet.
