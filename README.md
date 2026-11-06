@@ -6,8 +6,8 @@
 
 It is built for **learning and exploring** how GP works, with light practical use (fitting a formula to a small dataset) as a secondary goal. Everything runs locally in your browser; there is no backend and your data never leaves your machine.
 
-- Live demo: [bowo-prasetyo.github.io/equvolve](https://bowo-prasetyo.github.io/equvolve/#/)
-- Repository: [github.com/bowo-prasetyo/equvolve](https://github.com/bowo-prasetyo/equvolve)
+- Live demo: [bowo-prasetyo.github.io/EquVolve](https://bowo-prasetyo.github.io/EquVolve/#/)
+- Repository: [github.com/bowo-prasetyo/EquVolve](https://github.com/bowo-prasetyo/EquVolve)
 
 ---
 
@@ -30,7 +30,7 @@ It is built for **learning and exploring** how GP works, with light practical us
 
 ## Quick start
 
-1. Open the [live demo](https://bowo-prasetyo.github.io/equvolve/#/).
+1. Open the [live demo](https://bowo-prasetyo.github.io/EquVolve/#/).
 2. Keep the default target `x*x + 2` and press **Start Evolution**. It is solved in the first generation.
 3. Now try something harder: set the formula to `sin(x) * exp(x/3)`, pick the **Everything** operator preset and press **Start Evolution**. Watch the progress chart fall towards the dashed target line.
 4. When it stops, press **▶ Replay** to watch how the formula improved over the run.
@@ -235,8 +235,8 @@ What this shows:
 ## Running locally
 
 ```bash
-git clone https://github.com/bowo-prasetyo/equvolve.git
-cd equvolve
+git clone https://github.com/bowo-prasetyo/EquVolve.git
+cd EquVolve
 python3 -m http.server 8000
 ```
 

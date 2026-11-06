@@ -1526,7 +1526,7 @@ const About = {
   async mounted() {
     try {
       const response = await fetch(
-        'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/README.md'
+        'https://raw.githubusercontent.com/bowo-prasetyo/EquVolve/main/README.md'
       );
 
       this.content = marked.parse(await response.text());
