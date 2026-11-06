@@ -393,6 +393,8 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 | File            | Purpose                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------- |
 | `index.html`    | Page shell; applies the saved theme before the first paint, and loads pinned versions of Vue, Vue Router and Marked from jsDelivr |
+| `i18n.js`       | Translation: chooses the interface language, loads its messages and formats them (plurals, lists) |
+| `locales/`      | The interface's text, one ICU JSON file per language (`en.json` is the source)                |
 | `shared.js`     | Code shared by UI and engine: evaluation, formula sampling and checks (including the operators a formula needs), simplification, export, CSV parsing and the sample data, share links, config validation, R² in words, and the charts' layout and colours |
 | `worker.js`     | The GP engine (runs in a Web Worker)                                                           |
 | `app.js`        | Vue UI: inputs, visualisation, persistence, replay, share links, theme toggle, About page     |
@@ -401,7 +403,7 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 | `bench/`        | `npm run bench`: how often the engine reaches R² ≥ 0.999 on six targets                       |
 | `assets/`       | Logo: `logo-mark.svg` (the icon), and `logo-on-dark.svg` / `logo-on-light.svg` (icon with the EquVolve wordmark) |
 | `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` | Browser and home-screen icons |
-| `docs/`         | [Developer guide](docs/DEVELOPMENT.md): architecture, worker messages, data formats       |
+| `docs/`         | [Developer guide](docs/DEVELOPMENT.md): architecture, worker messages, data formats; [translation guide](docs/TRANSLATING.md) |
 | `.github/workflows/test.yml` | CI: runs `npm test` and `npm run test:ui` on Node 22                            |
 
 The About page renders this README, fetched live from the `main` branch. Its in-page links (such as [Example results](#example-results)) scroll to their section there, as they do on GitHub.
@@ -416,10 +418,12 @@ The About page renders this README, fetched live from the `main` branch. Its in-
 - Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
 - Phase 3: multi-variable regression, animated replay, batched generations for speed, and experimental constant optimisation (off by default, with the benchmark that justifies it).
 - Usability, round 2: a banner instead of a dialog to restore a saved run, controls at least 44 px tall on phones (operator chips), tree nodes that fit long numbers and names, R² in words and results in the page's own font, and CSV sample data, a preview and a report of skipped rows.
+- Ready for translation: every word of the interface in one message file per language, with proper plurals and lists, a test language that finds untranslated text, and a [translation guide](docs/TRANSLATING.md).
 - Usability: the main button follows the next useful step (with **New run** and an **Undo** in place of a confirmation dialog), a hint and one-click fix for operators the formula needs, the advanced settings tucked away, run buttons that stay in view, every problem shown at once next to its setting, and charts with axes that stay sharp and readable on any screen.
 
 **Next**
 
+- Translations of the interface, with a language switcher, and numbers formatted the way each language writes them
 - Constant optimisation that keeps population diversity, for example applied only when the search stagnates, or to offspring before they compete
 - Train/test split for datasets, so users can see whether a formula generalises
 - Upload a CSV and fit only some of its columns

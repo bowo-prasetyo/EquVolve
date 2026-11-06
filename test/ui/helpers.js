@@ -61,6 +61,7 @@ async function openApp(t, options = {}) {
     colorScheme: options.colorScheme || 'dark',
     viewport: options.viewport || { width: 1280, height: 720 },
     deviceScaleFactor: options.deviceScaleFactor || 1,
+    locale: options.locale || 'en-US',
     permissions: options.clipboard === 'grant' ? ['clipboard-read', 'clipboard-write'] : []
   });
 

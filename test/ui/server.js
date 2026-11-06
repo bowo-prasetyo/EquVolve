@@ -13,7 +13,8 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
-  '.md': 'text/markdown; charset=utf-8'
+  '.md': 'text/markdown; charset=utf-8',
+  '.json': 'application/json; charset=utf-8'
 };
 
 // Resolves with { url, close } once the server listens on a free port.

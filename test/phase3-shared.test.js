@@ -132,9 +132,9 @@ test('parseCsv lists the rows it skips, with their line numbers and why', () => 
   assert.deepEqual(t.rows, [[1, 2, 3], [4, 5, 6]]);
   // line numbers count every line of the file, blank ones included
   assert.deepEqual(t.skipped, [
-    { line: 2, reason: 'an empty cell' },
-    { line: 5, reason: 'text instead of a number' },
-    { line: 6, reason: 'missing cells' }
+    { line: 2, reason: 'emptyCell' },
+    { line: 5, reason: 'notNumber' },
+    { line: 6, reason: 'missingCells' }
   ]);
 
   assert.deepEqual(s.parseCsv('a,y\n1,2\n').skipped, []);
@@ -152,7 +152,7 @@ test('a file uses one separator, found from its first line', () => {
   // reported instead of being read into the wrong columns
   const t = s.parseCsv('a,b,y\n1,2,3\n4;5;6\n7\t8\t9\n');
   assert.deepEqual(t.rows, [[1, 2, 3]]);
-  assert.deepEqual(t.skipped.map(r => r.reason), ['missing cells', 'missing cells']);
+  assert.deepEqual(t.skipped.map(r => r.reason), ['missingCells', 'missingCells']);
 });
 
 test('parseCsv reads decimal commas from semicolon- and tab-separated files', () => {
@@ -175,7 +175,7 @@ test('parseCsv reads decimal commas from semicolon- and tab-separated files', ()
   // thousands separators are not guessed at: the row is reported
   const thousands = s.parseCsv('a;y\n1.234,5;1\n1;2\n');
   assert.deepEqual(thousands.rows, [[1, 2]]);
-  assert.deepEqual(thousands.skipped, [{ line: 2, reason: 'text instead of a number' }]);
+  assert.deepEqual(thousands.skipped, [{ line: 2, reason: 'notNumber' }]);
 
   assert.equal(s.parseCsv('a;y\n1.5;2\n').decimalComma, false);
 });
@@ -186,8 +186,8 @@ test('in a comma-separated file a decimal comma is never read as two numbers', (
   const t = s.parseCsv('a,y\n1,5,2,25\n"1,5",2\n3,4\n');
   assert.deepEqual(t.rows, [[3, 4]]);
   assert.deepEqual(t.skipped, [
-    { line: 2, reason: 'too many cells' },
-    { line: 3, reason: 'text instead of a number' }
+    { line: 2, reason: 'tooManyCells' },
+    { line: 3, reason: 'notNumber' }
   ]);
   assert.equal(t.decimalComma, false);
 });
@@ -218,20 +218,20 @@ test('describeCsvFormat says how a non-comma file was read', () => {
 test('describeSkippedRows sums up skipped rows by reason', () => {
   assert.equal(s.describeSkippedRows([]), '');
   assert.equal(
-    s.describeSkippedRows([{ line: 4, reason: 'an empty cell' }]),
+    s.describeSkippedRows([{ line: 4, reason: 'emptyCell' }]),
     'Skipped 1 row: line 4 (an empty cell).'
   );
   assert.equal(
     s.describeSkippedRows([
-      { line: 2, reason: 'an empty cell' },
-      { line: 5, reason: 'text instead of a number' },
-      { line: 9, reason: 'an empty cell' }
+      { line: 2, reason: 'emptyCell' },
+      { line: 5, reason: 'notNumber' },
+      { line: 9, reason: 'emptyCell' }
     ]),
     'Skipped 3 rows: lines 2 and 9 (an empty cell); line 5 (text instead of a number).'
   );
 
   // long lists are shortened
-  const many = [3, 4, 5, 6, 7, 8, 9].map(line => ({ line, reason: 'missing cells' }));
+  const many = [3, 4, 5, 6, 7, 8, 9].map(line => ({ line, reason: 'missingCells' }));
   assert.equal(s.describeSkippedRows(many), 'Skipped 7 rows: lines 3, 4, 5, 6, 7 and 2 more (missing cells).');
 });
 

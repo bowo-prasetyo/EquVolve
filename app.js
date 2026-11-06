@@ -1,33 +1,44 @@
 // Vue UI for EquVolve, the in-browser genetic programming playground.
-// Shared helpers come from shared.js (loaded first in index.html).
+// Shared helpers come from shared.js, and translations from i18n.js
+// (both loaded first in index.html). Every word the page shows comes
+// from locales/<language>.json through t() or, for messages with
+// markup, th(); templates use $t and $th.
 
+const t = (key, params) => I18n.t(key, params);
+const th = (key, params) => I18n.html(key, params);
+
+// Whole sentences run together, as the language writes them (with a
+// space in English, none in Chinese or Japanese). Empty ones are left out.
+const sentences = (...items) => items.filter(Boolean).join(t('sentence.separator'));
+
+// `nameKey`, `labelKey` and `hintKey` name messages in locales/*.json.
 const OPERATOR_GROUPS = [
-  { name: 'Arithmetic', ops: ['+', '-', '*', '/', 'pow'] },
-  { name: 'Trigonometric', ops: ['sin', 'cos', 'tan', 'asin', 'acos', 'atan'] },
-  { name: 'Hyperbolic', ops: ['sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh'] },
-  { name: 'Exponential & log', ops: ['exp', 'log', 'log2', 'log10'] },
-  { name: 'Roots', ops: ['sqrt', 'cbrt'] }
+  { id: 'arithmetic', nameKey: 'operators.group.arithmetic', ops: ['+', '-', '*', '/', 'pow'] },
+  { id: 'trigonometric', nameKey: 'operators.group.trigonometric', ops: ['sin', 'cos', 'tan', 'asin', 'acos', 'atan'] },
+  { id: 'hyperbolic', nameKey: 'operators.group.hyperbolic', ops: ['sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh'] },
+  { id: 'exponential', nameKey: 'operators.group.exponential', ops: ['exp', 'log', 'log2', 'log10'] },
+  { id: 'roots', nameKey: 'operators.group.roots', ops: ['sqrt', 'cbrt'] }
 ];
 
 const OPERATOR_PRESETS = [
-  { name: 'Polynomial', ops: ['+', '-', '*'] },
-  { name: 'Rational', ops: ['+', '-', '*', '/'] },
-  { name: 'Trigonometric', ops: ['+', '-', '*', '/', 'sin', 'cos'] },
-  { name: 'Exp / Log', ops: ['+', '-', '*', '/', 'exp', 'log'] },
-  { name: 'Everything', ops: Object.keys(OP_ARITY) }
+  { id: 'polynomial', nameKey: 'operators.preset.polynomial', ops: ['+', '-', '*'] },
+  { id: 'rational', nameKey: 'operators.preset.rational', ops: ['+', '-', '*', '/'] },
+  { id: 'trigonometric', nameKey: 'operators.preset.trigonometric', ops: ['+', '-', '*', '/', 'sin', 'cos'] },
+  { id: 'expLog', nameKey: 'operators.preset.expLog', ops: ['+', '-', '*', '/', 'exp', 'log'] },
+  { id: 'everything', nameKey: 'operators.preset.everything', ops: Object.keys(OP_ARITY) }
 ];
 
 // The settings most runs need are shown; the rest sit under Advanced.
 const SETTING_FIELDS = [
-  { key: 'maxGenerations', label: 'Max Generations', step: 1, hint: 'The run pauses after this many generations; raise it and press Resume to go on.' },
-  { key: 'targetR2', label: 'Target R²', step: 0.001, hint: 'The run stops as soon as the best program fits this well (1 = perfect fit).' },
-  { key: 'populationSize', label: 'Population Size', step: 1, advanced: true, hint: 'How many programs are tried at once. More can find harder formulas, but each generation is slower.' },
-  { key: 'crossoverRate', advanced: true, label: 'Crossover Rate', step: 0.05, hint: 'How often (0–1) a new program combines parts of two good programs, instead of copying one.' },
-  { key: 'mutationRate', advanced: true, label: 'Mutation Rate', step: 0.05, hint: 'How often (0–1) a new program then gets a small random change.' },
-  { key: 'elitismRate', advanced: true, label: 'Elitism Rate', step: 0.01, hint: 'The share (0–1) of the best programs kept unchanged for the next generation.' },
-  { key: 'tournamentSize', advanced: true, label: 'Tournament Size', step: 1, hint: 'Parents are chosen by letting this many random programs compete; larger favours the best more strongly.' },
-  { key: 'treeDepth', advanced: true, label: 'Initial Tree Depth', step: 1, hint: 'How deeply nested the random programs at the start may be.' },
-  { key: 'maxTreeDepth', advanced: true, label: 'Max Tree Depth', step: 1, hint: `How deeply nested any program may become (up to ${MAX_TREE_DEPTH_LIMIT}); stops programs growing without fitting better.` }
+  { key: 'maxGenerations', labelKey: 'setting.maxGenerations.label', hintKey: 'setting.maxGenerations.hint', step: 1 },
+  { key: 'targetR2', labelKey: 'setting.targetR2.label', hintKey: 'setting.targetR2.hint', step: 0.001 },
+  { key: 'populationSize', labelKey: 'setting.populationSize.label', hintKey: 'setting.populationSize.hint', step: 1, advanced: true },
+  { key: 'crossoverRate', labelKey: 'setting.crossoverRate.label', hintKey: 'setting.crossoverRate.hint', step: 0.05, advanced: true },
+  { key: 'mutationRate', labelKey: 'setting.mutationRate.label', hintKey: 'setting.mutationRate.hint', step: 0.05, advanced: true },
+  { key: 'elitismRate', labelKey: 'setting.elitismRate.label', hintKey: 'setting.elitismRate.hint', step: 0.01, advanced: true },
+  { key: 'tournamentSize', labelKey: 'setting.tournamentSize.label', hintKey: 'setting.tournamentSize.hint', step: 1, advanced: true },
+  { key: 'treeDepth', labelKey: 'setting.treeDepth.label', hintKey: 'setting.treeDepth.hint', step: 1, advanced: true },
+  { key: 'maxTreeDepth', labelKey: 'setting.maxTreeDepth.label', hintKey: 'setting.maxTreeDepth.hint', hintParams: { limit: MAX_TREE_DEPTH_LIMIT }, step: 1, advanced: true }
 ];
 
 // Settings under Advanced, for counting how many differ from the defaults.
@@ -61,8 +72,9 @@ const fieldRank = (field) => {
   return i < 0 ? FIELD_ORDER.length : i;
 };
 
+// Language names are not translated; the plain formula's label is.
 const EXPORT_FORMATS = [
-  { key: 'plain', label: 'Formula' },
+  { key: 'plain', labelKey: 'export.plain' },
   { key: 'js', label: 'JavaScript' },
   { key: 'python', label: 'Python' },
   { key: 'latex', label: 'LaTeX' }
@@ -104,16 +116,17 @@ const THEME_CHANGE_EVENT = 'equvolve:themechange';
 const FIT_MAX_POINTS = 60;
 const PREDICTED_MAX_POINTS = 400;
 
-// "5 minutes ago", "yesterday", ... for a past time in milliseconds.
+// "5 minutes ago", "yesterday", ... for a past time in milliseconds, in
+// the interface's language.
 function timeAgo(timestamp, now = Date.now()) {
   const seconds = Math.round((timestamp - now) / 1000);
-  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const format = new Intl.RelativeTimeFormat(I18n.intlLocale(), { numeric: 'auto' });
 
   for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
     if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
   }
 
-  return 'just now';
+  return t('time.justNow');
 }
 
 // How many rows of an uploaded dataset the preview table shows.
@@ -130,10 +143,10 @@ const Home = {
     <header class="page-header">
       <h1 class="brand">
         <img src="assets/logo-mark.svg" alt="" class="brand-mark">
-        <span>Equ<span class="brand-accent">Volve</span></span>
+        <span translate="no">Equ<span class="brand-accent">Volve</span></span>
       </h1>
       <p class="tagline">
-        Evolve a formula that explains your data, live and entirely in your browser.
+        {{ $t('header.tagline') }}
       </p>
     </header>
 
@@ -141,38 +154,37 @@ const Home = {
          dialog, so the page is usable straight away. -->
     <section v-if="savedRun" class="restore-banner" aria-labelledby="restore-title">
       <p>
-        <b id="restore-title">Continue where you left off?</b>
-        Your last run is saved in this browser: {{ savedRunSummary }}.
-        It comes back paused, with its results.
+        <b id="restore-title">{{ $t('restore.title') }}</b>
+        {{ $t('restore.body', { summary: savedRunSummary }) }}
       </p>
       <div class="controls">
-        <button class="primary" @click="restoreSavedRun">Restore run</button>
-        <button @click="savedRun = null">Not now</button>
+        <button class="primary" @click="restoreSavedRun">{{ $t('restore.restore') }}</button>
+        <button @click="savedRun = null">{{ $t('restore.notNow') }}</button>
       </div>
-      <p class="hint">Not now keeps it saved for your next visit; starting a new run replaces it.</p>
+      <p class="hint">{{ $t('restore.hint') }}</p>
     </section>
 
     <!-- ===================== 1. TARGET ===================== -->
     <section class="panel">
-      <h2>1. Data</h2>
+      <h2>{{ $t('data.title') }}</h2>
 
       <div class="field-row">
-        <span class="field-label">Data source</span>
+        <span class="field-label">{{ $t('data.source') }}</span>
 
         <label class="inline">
           <input type="radio" value="formula" v-model="dataMode" :disabled="isRunning">
-          Generate from formula
+          {{ $t('data.source.formula') }}
         </label>
 
         <label class="inline">
           <input type="radio" value="dataset" v-model="dataMode" :disabled="isRunning">
-          Upload dataset
+          {{ $t('data.source.dataset') }}
         </label>
       </div>
 
       <template v-if="dataMode === 'formula'">
         <div class="field-row">
-          <label class="field-label" for="formula">Formula</label>
+          <label class="field-label" for="formula">{{ $t('data.formula') }}</label>
           <input
             id="formula"
             class="wide"
@@ -185,80 +197,69 @@ const Home = {
         </div>
 
         <div class="field-row">
-          <span class="field-label" id="x-range-label">X range</span>
+          <span class="field-label" id="x-range-label">{{ $t('data.xRange') }}</span>
           <span class="range-inputs">
-            <input id="min-x" type="number" v-model.number="minX" :disabled="isRunning" aria-label="Minimum x" v-bind="invalidAttrs('xRange')">
-            <span>to</span>
-            <input id="max-x" type="number" v-model.number="maxX" :disabled="isRunning" aria-label="Maximum x" v-bind="invalidAttrs('xRange')">
+            <input id="min-x" type="number" v-model.number="minX" :disabled="isRunning" :aria-label="$t('data.xRange.min')" v-bind="invalidAttrs('xRange')">
+            <span>{{ $t('data.xRange.to') }}</span>
+            <input id="max-x" type="number" v-model.number="maxX" :disabled="isRunning" :aria-label="$t('data.xRange.max')" v-bind="invalidAttrs('xRange')">
           </span>
           <span v-if="fieldErrors.xRange" id="error-xRange" class="field-error">{{ fieldErrors.xRange }}</span>
         </div>
 
         <div class="field-row">
-          <label class="field-label" for="samples">Sample points</label>
+          <label class="field-label" for="samples">{{ $t('data.samples') }}</label>
           <input id="samples" type="number" min="2" step="1" v-model.number="sampleCount" :disabled="isRunning" v-bind="invalidAttrs('sampleCount')">
           <span v-if="fieldErrors.sampleCount" id="error-sampleCount" class="field-error">{{ fieldErrors.sampleCount }}</span>
-          <span class="hint">evenly spaced across the X range; these are the points the run fits</span>
+          <span class="hint">{{ $t('data.samples.hint') }}</span>
         </div>
 
-        <p class="hint">
-          Write formulas in <code>x</code> with Math functions and constants:
-          <code>sin(x)</code>, <code>pow(x, 2)</code>, <code>exp(-x*x)</code>, <code>PI * x</code>, or <code>Math.sin(x)</code>.
-        </p>
+        <p class="hint" v-html="$th('data.formula.hint')"></p>
       </template>
 
       <template v-else>
         <div class="field-row">
-          <label class="field-label" for="csv">CSV file</label>
+          <label class="field-label" for="csv">{{ $t('data.csv') }}</label>
           <input id="csv" type="file" accept=".csv,text/csv" @change="handleFileUpload" :disabled="isRunning" v-bind="invalidAttrs('dataset')">
           <span v-if="fieldErrors.dataset" id="error-dataset" class="field-error">{{ fieldErrors.dataset }}</span>
         </div>
 
         <div class="field-row sample-row">
-          <span class="hint">No file to hand, or unsure of the format?</span>
-          <button class="small" @click="useSampleCsv" :disabled="isRunning">Use sample data</button>
-          <button class="small" @click="downloadSampleCsv">Download sample CSV</button>
+          <span class="hint">{{ $t('data.sample.prompt') }}</span>
+          <button class="small" @click="useSampleCsv" :disabled="isRunning">{{ $t('data.sample.use') }}</button>
+          <button class="small" @click="downloadSampleCsv">{{ $t('data.sample.download') }}</button>
         </div>
 
-        <p class="hint">
-          Columns of numbers, usually with a header row. One column is the target to predict (the last one by default);
-          every other column becomes an input (up to {{ maxVariables }}).
-          With a single input it is called <code>x</code>. Rows with empty cells or text are skipped.
-        </p>
+        <p class="hint" v-html="$th('data.csv.hint', { max: maxVariables })"></p>
 
         <div v-if="csvTable && csvTable.headers.length > 2" class="field-row">
-          <label class="field-label" for="target-column">Target column</label>
+          <label class="field-label" for="target-column">{{ $t('data.targetColumn') }}</label>
           <select id="target-column" v-model.number="targetColumn" @change="applyTable" :disabled="isRunning">
             <option v-for="(h, i) in csvTable.headers" :key="i" :value="i">{{ h }}</option>
           </select>
         </div>
 
         <div v-if="uploadedFileName" class="loaded-summary">
-          <p class="loaded-line">
-            Loaded {{ uploadedFileName }}: {{ uploadedData.length }} rows
-            <template v-if="isMultiVariable">
-              · inputs: {{ variables.join(', ') }}<template v-if="targetName"> · target: {{ targetName }}</template>
-            </template>
-          </p>
+          <p class="loaded-line">{{ loadedSummary }}</p>
 
           <p v-if="csvFormatText" class="hint csv-format">{{ csvFormatText }}</p>
 
           <p v-if="csvSkippedText" class="hint skipped-rows">{{ csvSkippedText }}</p>
 
           <p v-if="ignoredColumns.length" class="hint ignored-columns">
-            Only the first {{ maxVariables }} input columns are used; ignored: {{ ignoredColumns.join(', ') }}.
+            {{ $t('csv.ignored', { max: maxVariables, names: $list(ignoredColumns, 'unit') }) }}
           </p>
 
           <div v-if="previewRows.length" class="preview-wrap">
             <table class="preview">
               <caption>
-                {{ previewRows.length < uploadedData.length ? 'The first ' + previewRows.length + ' of ' + uploadedData.length + ' rows' : 'All ' + uploadedData.length + ' rows' }},
-                as EquVolve reads them
+                {{ previewRows.length < uploadedData.length ?
+                  $t('csv.preview.some', { shown: previewRows.length, total: uploadedData.length }) :
+                  $t('csv.preview.all', { total: uploadedData.length }) }}
               </caption>
               <thead>
                 <tr>
                   <th v-for="c in previewColumns" :key="c.name" scope="col" :class="{ target: c.target }">
-                    {{ c.name }}<span v-if="c.target" class="hint"> (target)</span>
+                    {{ c.name }}<span v-if="c.target" class="hint">{{ ' ' + $t('csv.preview.target') }}</span>
                   </th>
                 </tr>
               </thead>
@@ -275,11 +276,11 @@ const Home = {
 
     <!-- ===================== 2. SETTINGS ===================== -->
     <section class="panel">
-      <h2>2. Settings</h2>
+      <h2>{{ $t('settings.title') }}</h2>
 
       <div class="settings-grid">
         <label v-for="f in basicFields" :key="f.key" class="setting">
-          <span class="field-label">{{ f.label }}</span>
+          <span class="field-label">{{ $t(f.labelKey) }}</span>
           <input
             :id="'setting-' + f.key"
             type="number"
@@ -289,38 +290,33 @@ const Home = {
             v-bind="invalidAttrs(f.key)"
           >
           <span v-if="fieldErrors[f.key]" :id="'error-' + f.key" class="field-error">{{ fieldErrors[f.key] }}</span>
-          <span class="hint">{{ f.hint }}</span>
+          <span class="hint">{{ $t(f.hintKey, f.hintParams) }}</span>
         </label>
 
         <label class="setting">
-          <span class="field-label">Speed</span>
+          <span class="field-label">{{ $t('settings.speed') }}</span>
           <select v-model="speed" :disabled="isRunning">
-            <option value="fast">Fast</option>
-            <option value="slow">Slow: one generation at a time</option>
+            <option value="fast">{{ $t('settings.speed.fast') }}</option>
+            <option value="slow">{{ $t('settings.speed.slow') }}</option>
           </select>
-          <span class="hint">
-            Fast runs many generations between screen updates. Slow is for watching each step.
-          </span>
+          <span class="hint">{{ $t('settings.speed.hint') }}</span>
         </label>
       </div>
 
-      <h3 id="operators-heading">Operators</h3>
+      <h3 id="operators-heading">{{ $t('operators.title') }}</h3>
 
-      <p class="hint">
-        The building blocks programs may use. Pick what matches your data: Trigonometric for waves,
-        Exp / Log for growth, decay or bell curves, Rational for division. A few fitting operators usually beat Everything.
-      </p>
+      <p class="hint">{{ $t('operators.hint') }}</p>
 
       <div class="preset-row">
-        <span class="hint">Presets:</span>
+        <span class="hint">{{ $t('operators.presets') }}</span>
         <button
           v-for="p in operatorPresets"
-          :key="p.name"
+          :key="p.id"
           class="small"
           :class="{ active: isPreset(p) }"
           @click="enabledOperators = [...p.ops]"
           :disabled="isRunning"
-        >{{ p.name }}</button>
+        >{{ $t(p.nameKey) }}</button>
       </div>
 
       <div
@@ -331,9 +327,9 @@ const Home = {
         aria-labelledby="operators-heading"
         v-bind="invalidAttrs('operators')"
       >
-        <fieldset v-for="g in operatorGroups" :key="g.name">
-          <legend>{{ g.name }}</legend>
-          <label v-for="op in g.ops" :key="op" class="inline operator">
+        <fieldset v-for="g in operatorGroups" :key="g.id">
+          <legend>{{ $t(g.nameKey) }}</legend>
+          <label v-for="op in g.ops" :key="op" class="inline operator" translate="no">
             <input type="checkbox" :value="op" v-model="enabledOperators" :disabled="isRunning">
             {{ op }}
           </label>
@@ -343,17 +339,17 @@ const Home = {
 
       <details class="advanced" :open="advancedOpen" @toggle="advancedOpen = $event.target.open">
         <summary>
-          <h3>Advanced settings</h3>
+          <h3>{{ $t('advanced.title') }}</h3>
           <span class="hint">
-            population, rates, tree depth, scaling<template v-if="advancedChanged"> · {{ advancedChanged }} changed from the defaults</template>
+            {{ $t('advanced.summary') }}<template v-if="advancedChanged"> · {{ $t('advanced.changed', { count: advancedChanged }) }}</template>
           </span>
         </summary>
 
-        <p class="hint">The defaults work well for most data. These are for exploring how genetic programming behaves.</p>
+        <p class="hint">{{ $t('advanced.hint') }}</p>
 
         <div class="settings-grid">
           <label v-for="f in advancedFields" :key="f.key" class="setting">
-            <span class="field-label">{{ f.label }}</span>
+            <span class="field-label">{{ $t(f.labelKey) }}</span>
             <input
               :id="'setting-' + f.key"
               type="number"
@@ -363,28 +359,23 @@ const Home = {
               v-bind="invalidAttrs(f.key)"
             >
             <span v-if="fieldErrors[f.key]" :id="'error-' + f.key" class="field-error">{{ fieldErrors[f.key] }}</span>
-            <span class="hint">{{ f.hint }}</span>
+            <span class="hint">{{ $t(f.hintKey, f.hintParams) }}</span>
           </label>
 
           <label class="setting">
             <span class="field-label">
               <input type="checkbox" v-model="linearScaling" :disabled="isRunning">
-              Linear scaling
+              {{ $t('advanced.linearScaling') }}
             </span>
-            <span class="hint">
-              Lets every program be stretched and shifted (a + b·f(x)) to fit the data, so evolution only has to find the right shape.
-            </span>
+            <span class="hint">{{ $t('advanced.linearScaling.hint') }}</span>
           </label>
 
           <label class="setting">
             <span class="field-label">
               <input type="checkbox" v-model="constantOptimization" :disabled="isRunning">
-              Constant optimisation
+              {{ $t('advanced.constantOptimization') }}
             </span>
-            <span class="hint">
-              Each generation, fine-tune the numbers inside a random 10% of programs (such as the 1/3 in exp(x/3)).
-              Experimental and off by default: in our benchmark it did not improve results.
-            </span>
+            <span class="hint">{{ $t('advanced.constantOptimization.hint') }}</span>
           </label>
         </div>
       </details>
@@ -396,7 +387,7 @@ const Home = {
     <div class="run-bar">
       <div v-if="validationErrors.length || errorMessages.length" class="run-message error" role="alert">
         <p v-if="validationErrors.length" class="run-message-title">
-          {{ validationErrors.length === 1 ? 'Fix this to continue:' : 'Fix these ' + validationErrors.length + ' problems to continue:' }}
+          {{ $t('run.fix', { count: validationErrors.length }) }}
         </p>
         <ul>
           <li v-for="(e, i) in validationErrors" :key="'v' + i">
@@ -407,18 +398,12 @@ const Home = {
       </div>
 
       <div v-if="missingOperators.length && !isRunning" class="run-message note">
-        <span>
-          Your formula uses <template v-for="(op, i) in missingOperators" :key="op"><code>{{ op }}</code>{{ i < missingOperators.length - 1 ? ', ' : '' }}</template>,
-          which {{ missingOperators.length === 1 ? 'is' : 'are' }} not ticked under Operators, so a run can only approximate it.
-        </span>
-        <button class="small" @click="addOperators(missingOperators)">Tick {{ missingOperators.join(' ') }}</button>
+        <span v-html="$th('run.missingOperators', { ops: codeList(missingOperators), count: missingOperators.length })"></span>
+        <button class="small" @click="addOperators(missingOperators)">{{ $t('run.tickOperators', { ops: missingOperators.join(' ') }) }}</button>
       </div>
 
       <div v-if="formulaUse.unsupported.length && !isRunning" class="run-message note">
-        <span>
-          <template v-for="(name, i) in formulaUse.unsupported" :key="name"><code>{{ name }}</code>{{ i < formulaUse.unsupported.length - 1 ? ', ' : '' }}</template>
-          {{ formulaUse.unsupported.length === 1 ? 'is' : 'are' }} not available as an operator, so a run can only approximate it.
-        </span>
+        <span v-html="$th('run.unsupported', { names: codeList(formulaUse.unsupported), count: formulaUse.unsupported.length })"></span>
       </div>
 
       <div v-if="statusMessage" class="run-message status" role="status">
@@ -428,63 +413,59 @@ const Home = {
 
       <div class="controls">
         <template v-if="isRunning">
-          <button class="primary" disabled>Running…</button>
-          <button @click="stopEvolution">Stop</button>
+          <button class="primary" disabled>{{ $t('run.running') }}</button>
+          <button @click="stopEvolution">{{ $t('run.stop') }}</button>
         </template>
 
         <template v-else-if="isPaused">
           <template v-if="resumeBlocker">
-            <button class="primary" @click="newRun">New run</button>
-            <button @click="resumeEvolution">Resume</button>
+            <button class="primary" @click="newRun">{{ $t('run.newRun') }}</button>
+            <button @click="resumeEvolution">{{ $t('run.resume') }}</button>
           </template>
           <template v-else>
-            <button class="primary" @click="resumeEvolution">Resume</button>
-            <button @click="newRun">New run</button>
+            <button class="primary" @click="resumeEvolution">{{ $t('run.resume') }}</button>
+            <button @click="newRun">{{ $t('run.newRun') }}</button>
           </template>
         </template>
 
-        <button v-else class="primary" @click="startEvolution">Start Evolution</button>
+        <button v-else class="primary" @click="startEvolution">{{ $t('run.start') }}</button>
 
-        <button v-if="best && !isRunning" @click="shareRun">
-          Copy share link
-        </button>
+        <button v-if="best && !isRunning" @click="shareRun">{{ $t('run.share') }}</button>
 
-        <button v-if="isPaused" class="quiet" @click="clearResults">Clear Results</button>
+        <button v-if="isPaused" class="quiet" @click="clearResults">{{ $t('run.clear') }}</button>
       </div>
 
       <p v-if="resumeHint" class="hint resume-hint">{{ resumeHint }}</p>
     </div>
 
     <div v-if="shareUrl" class="field-row">
-      <input class="wide" readonly :value="shareUrl" @focus="$event.target.select()" aria-label="Share link">
+      <input class="wide" readonly :value="shareUrl" @focus="$event.target.select()" :aria-label="$t('run.shareLink')">
     </div>
 
     <!-- ===================== 3. RESULTS ===================== -->
     <section class="panel">
-      <h2>3. Results</h2>
+      <h2>{{ $t('results.title') }}</h2>
 
       <div class="stat-row">
-        <div class="stat"><span>Generation</span><b>{{ generation }}</b></div>
+        <div class="stat"><span>{{ $t('results.generation') }}</span><b>{{ generation }}</b></div>
         <div class="stat">
-          <span>Best R²</span><b>{{ formatR2(bestR2) }}</b>
+          <span>{{ $t('results.bestR2') }}</span><b>{{ formatR2(bestR2) }}</b>
           <small v-if="bestR2 != null" class="fit-quality" :class="fitClass(bestR2)">{{ fitQuality(bestR2) }}</small>
         </div>
-        <div class="stat"><span>Program size</span><b>{{ bestSize ?? '–' }}</b></div>
-        <div class="stat"><span>Speed</span><b>{{ speedText }}</b></div>
+        <div class="stat"><span>{{ $t('results.size') }}</span><b>{{ bestSize ?? '–' }}</b></div>
+        <div class="stat"><span>{{ $t('results.speed') }}</span><b>{{ speedText }}</b></div>
       </div>
 
-      <p class="hint">
-        R² measures the fit: 1 is perfect, 0 is no better than always guessing the average, and below 0 is worse than that.
-      </p>
+      <p class="hint">{{ $t('results.r2.hint') }}</p>
 
       <template v-if="best">
-        <h3>{{ replayEntry ? 'Replay: best program at generation ' + replayEntry.g : 'Best program' }}</h3>
+        <h3>{{ replayEntry ? $t('results.replayTitle', { generation: replayEntry.g }) : $t('results.best') }}</h3>
 
         <div class="code expression" :class="{ replaying: replayEntry }">y = {{ expression }}</div>
 
         <div v-if="timeline.length > 1 && !isRunning" class="replay">
-          <button class="small" @click="toggleReplay" :aria-label="replayTimer ? 'Pause replay' : 'Play replay'">
-            {{ replayTimer ? '⏸ Pause' : '▶ Replay' }}
+          <button class="small" @click="toggleReplay" :aria-label="replayTimer ? $t('replay.pause.label') : $t('replay.play.label')">
+            {{ replayTimer ? $t('replay.pause') : $t('replay.play') }}
           </button>
 
           <input
@@ -494,15 +475,17 @@ const Home = {
             step="1"
             :value="replayIndex ?? timeline.length - 1"
             @input="seekReplay(Number($event.target.value))"
-            aria-label="Replay position"
+            :aria-label="$t('replay.position')"
           >
 
           <span class="hint">
-            {{ replayEntry ? 'generation ' + replayEntry.g + ' · R² ' + formatR2(replayEntry.r2) + ' (' + fitQuality(replayEntry.r2).toLowerCase() + ')' : 'latest' }}
-            · {{ timeline.length }} improvements
+            {{ replayEntry ?
+              $t('replay.at', { generation: replayEntry.g, r2: formatR2(replayEntry.r2), quality: fitQuality(replayEntry.r2, true) }) :
+              $t('replay.latest') }}
+            · {{ $t('replay.improvements', { count: timeline.length }) }}
           </span>
 
-          <button v-if="replayEntry" class="small" @click="stopReplay">Back to latest</button>
+          <button v-if="replayEntry" class="small" @click="stopReplay">{{ $t('replay.back') }}</button>
         </div>
 
         <div class="export">
@@ -515,7 +498,8 @@ const Home = {
               :aria-selected="exportFormat === f.key"
               :class="{ active: exportFormat === f.key }"
               @click="exportFormat = f.key"
-            >{{ f.label }}</button>
+              :translate="f.labelKey ? null : 'no'"
+            >{{ f.labelKey ? $t(f.labelKey) : f.label }}</button>
 
             <button class="small" @click="copyExport">{{ copyLabel }}</button>
           </div>
@@ -526,37 +510,29 @@ const Home = {
 
       <div class="charts">
         <figure>
-          <figcaption v-if="isMultiVariable">
-            Fit: <span class="key cyan">predicted vs actual</span> for each row; points on the
-            <span class="key red">diagonal</span> are predicted exactly
-          </figcaption>
-          <figcaption v-else>
-            Fit: <span class="key cyan">data</span> and <span class="key red">best program</span>
-          </figcaption>
+          <figcaption v-if="isMultiVariable" v-html="$th('chart.fit.multi')"></figcaption>
+          <figcaption v-else v-html="$th('chart.fit.single')"></figcaption>
           <canvas ref="canvas" width="600" height="300"></canvas>
         </figure>
 
         <figure>
           <figcaption>
-            Progress per generation (log scale of 1 − R²):
-            <span class="key red">best</span>
-            <span class="key grey">median</span>
-            <span class="key green">target</span>
-            <span v-if="replayEntry" class="key blue">replay</span>
+            <span v-html="$th('chart.progress')"></span>
+            <span v-if="replayEntry" class="key blue">{{ $t('chart.progress.replay') }}</span>
           </figcaption>
           <canvas ref="progress" width="600" height="300"></canvas>
         </figure>
       </div>
 
       <template v-if="best">
-        <h3>Expression tree</h3>
+        <h3>{{ $t('tree.title') }}</h3>
 
         <svg
           class="tree"
           :viewBox="treeLayout.viewBox"
           :style="{ maxWidth: treeLayout.width + 'px' }"
           role="img"
-          :aria-label="'Expression tree for y = ' + expression"
+          :aria-label="$t('tree.label', { expression })"
         >
           <line
             v-for="(n, i) in treeLayout.nodes"
@@ -583,17 +559,14 @@ const Home = {
           </g>
         </svg>
 
-        <p class="hint">
-          Each node is labelled with its operator, variable or number: operators are orange, variables green and numbers khaki.
-          Point at a number to see all its digits.
-        </p>
+        <p class="hint">{{ $t('tree.hint') }}</p>
       </template>
 
       <template v-if="history.length">
-        <h3>Recent generations</h3>
+        <h3>{{ $t('history.title') }}</h3>
 
         <div v-for="item in history" :key="item.generation" class="history">
-          <span class="history-meta">Generation {{ item.generation }} · R² {{ formatR2(item.r2) }}</span>
+          <span class="history-meta">{{ $t('history.item', { generation: item.generation, r2: formatR2(item.r2) }) }}</span>
           <code>{{ item.expression }}</code>
         </div>
       </template>
@@ -638,7 +611,7 @@ const Home = {
       undo: null, // { label, state }: the run that Clear Results or New run replaced
       savedRun: null, // the checkpoint from an earlier visit, offered for restoring
       exportFormat: 'plain',
-      copyLabel: 'Copy',
+      copyLabel: t('export.copy'),
       shareUrl: '',
 
       // a checkpoint is written whenever the best fitness improves,
@@ -687,7 +660,8 @@ const Home = {
 
     speedText() {
       if (!this.gensPerSecond) return '–';
-      return `${this.gensPerSecond >= 10 ? Math.round(this.gensPerSecond) : this.gensPerSecond.toFixed(1)} gen/s`;
+      const value = this.gensPerSecond >= 10 ? Math.round(this.gensPerSecond) : this.gensPerSecond.toFixed(1);
+      return t('results.speedValue', { value });
     },
 
     sampleData() {
@@ -735,6 +709,18 @@ const Home = {
       return describeCsvFormat(this.csvTable);
     },
 
+    // "Loaded boxes.csv: 24 rows · inputs: height, width · target: price"
+    loadedSummary() {
+      const parts = [t('csv.loaded', { file: this.uploadedFileName, count: this.uploadedData.length })];
+
+      if (this.isMultiVariable) {
+        parts.push(t('csv.loaded.inputs', { names: I18n.list(this.variables, 'unit') }));
+        if (this.targetName) parts.push(t('csv.loaded.target', { name: this.targetName }));
+      }
+
+      return parts.join(' · ');
+    },
+
     // Columns past the input limit, which datasetFromTable leaves out.
     ignoredColumns() {
       if (!this.csvTable) return [];
@@ -767,15 +753,15 @@ const Home = {
 
       const config = run.config || {};
       const what = config.dataMode === 'dataset' ?
-        (config.uploadedFileName || 'an uploaded dataset') :
+        (config.uploadedFileName || t('restore.summary.dataset')) :
         `y = ${config.targetFormula}`;
-      const parts = [what, `generation ${run.generation || 0}`];
+      const parts = [what, t('restore.summary.generation', { generation: run.generation || 0 })];
 
       if (Number.isFinite(run.bestR2)) {
-        parts.push(`R² ${this.formatR2(run.bestR2)} (${fitQuality(run.bestR2).toLowerCase()})`);
+        parts.push(t('restore.summary.fit', { r2: this.formatR2(run.bestR2), quality: fitQuality(run.bestR2, true) }));
       }
 
-      if (run.timestamp) parts.push(`saved ${timeAgo(run.timestamp)}`);
+      if (run.timestamp) parts.push(t('restore.summary.saved', { when: timeAgo(run.timestamp) }));
 
       return parts.join(' · ');
     },
@@ -838,11 +824,11 @@ const Home = {
     resumeHint() {
       switch (this.resumeBlocker) {
         case 'perfect':
-          return 'The best program fits the data perfectly, so there is nothing left to improve. Press New run to search again from scratch.';
+          return t('resume.perfect');
         case 'targetR2':
-          return `The best program already reaches Target R² ${this.targetR2}. To keep improving it, raise Target R² and press Resume; or press New run to search again from scratch.`;
+          return t('resume.targetR2', { target: this.targetR2 });
         case 'maxGenerations':
-          return `The run is at Max Generations (${this.maxGenerations}). To continue it, raise Max Generations and press Resume; or press New run to search again from scratch.`;
+          return t('resume.maxGenerations', { max: this.maxGenerations });
         default:
           return '';
       }
@@ -933,8 +919,16 @@ const Home = {
 
   methods: {
 
-    fitQuality(r2) {
-      return fitQuality(r2);
+    fitQuality(r2, inline = false) {
+      return fitQuality(r2, inline);
+    },
+
+    // Names as a list of <code> items, for th() messages such as
+    // "Your formula uses {ops}": "<code>sin</code> and <code>exp</code>".
+    codeList(names) {
+      const marker = (i) => `\u0000${i}\u0000`;
+      const escaped = I18n.escapeHtml(I18n.list(names.map((_, i) => marker(i))));
+      return I18n.raw(escaped.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${I18n.escapeHtml(names[i])}</code>`));
     },
 
     // A colour class for a fit quality: good, fair or poor.
@@ -1091,7 +1085,7 @@ const Home = {
       this.applySettings(config);
 
       this.uploadedData = config.dataset ?? [];
-      this.uploadedFileName = config.uploadedFileName || 'Restored Dataset';
+      this.uploadedFileName = config.uploadedFileName || t('csv.restoredDataset');
       // the restored rows replace any file loaded in this visit
       this.csvTable = null;
       this.csvSkipped = [];
@@ -1110,7 +1104,7 @@ const Home = {
       this.replayIndex = null;
 
       this.evolutionState = 'paused';
-      this.statusMessage = `Restored session at generation ${this.generation}. Press Resume to continue.`;
+      this.statusMessage = t('status.restored', { generation: this.generation });
 
       this.latestPopulation = (state.population || [])
         .map(decompressTree)
@@ -1298,7 +1292,7 @@ const Home = {
       this.worker.postMessage({ type: 'stop' });
 
       this.evolutionState = 'paused';
-      this.statusMessage = 'Paused.';
+      this.statusMessage = t('status.paused');
 
       // make sure the paused state survives a browser shutdown (saved
       // again with the exact population when the worker confirms)
@@ -1347,7 +1341,7 @@ const Home = {
       const previous = this.best ? this.checkpointState() : null;
 
       this.launch(config);
-      this.offerUndo(previous, 'Started a new run.', 'Undo new run');
+      this.offerUndo(previous, t('status.newRun'), t('status.undoNewRun'));
     },
 
     // Clear the results and the saved run straight away; Undo brings
@@ -1376,7 +1370,7 @@ const Home = {
         tx.objectStore('sessions').delete('latest');
       }
 
-      this.offerUndo(previous, 'Results cleared.', 'Undo');
+      this.offerUndo(previous, t('status.cleared'), t('status.undo'));
     },
 
     offerUndo(state, message, label) {
@@ -1401,7 +1395,7 @@ const Home = {
       this.errorMessages = [];
       this.showValidation = false;
       this.restoreSession(state);
-      this.statusMessage = `Brought back the run at generation ${this.generation}.`;
+      this.statusMessage = t('status.broughtBack', { generation: this.generation });
       this.saveCheckpoint(true);
     },
 
@@ -1426,8 +1420,8 @@ const Home = {
           this.evolutionState = 'paused';
 
           this.statusMessage = msg.reason === 'targetReached' ?
-            `Target R² reached at generation ${msg.generation}.` :
-            `Stopped at Max Generations (${msg.generation}). Increase Max Generations and press Resume to continue.`;
+            t('status.targetReached', { generation: msg.generation }) :
+            t('status.maxGenerations', { generation: msg.generation });
         }
 
         this.saveBest();
@@ -1569,9 +1563,9 @@ const Home = {
     async copyExport() {
       const ok = await this.copyText(this.exportText);
 
-      this.copyLabel = ok ? 'Copied!' : 'Copy failed: select the text manually';
+      this.copyLabel = ok ? t('export.copied') : t('export.copyFailed');
 
-      setTimeout(() => { this.copyLabel = 'Copy'; }, 2000);
+      setTimeout(() => { this.copyLabel = t('export.copy'); }, 2000);
     },
 
     async shareRun() {
@@ -1590,12 +1584,12 @@ const Home = {
 
       const copied = await this.copyText(url);
 
-      this.statusMessage = [
-        copied ? 'Share link copied to the clipboard.' : 'Share link created below.',
+      this.statusMessage = sentences(
+        copied ? t('share.copied') : t('share.created'),
         payload.datasetOmitted ?
-          `The dataset has more than ${MAX_SHARED_POINTS} points, so it is not included; the recipient needs to upload it.` :
-          'It contains the settings, the data and the best program, but not the population.'
-      ].join(' ');
+          t('share.datasetOmitted', { max: MAX_SHARED_POINTS }) :
+          t('share.contents')
+      );
     },
 
     async loadSharedRun(code) {
@@ -1607,7 +1601,7 @@ const Home = {
 
         if (shared.config.dataset) {
           this.uploadedData = shared.config.dataset;
-          this.uploadedFileName = shared.fileName || 'Shared dataset';
+          this.uploadedFileName = shared.fileName || t('csv.sharedDataset');
           this.csvTable = null;
           this.csvSkipped = [];
         }
@@ -1621,19 +1615,19 @@ const Home = {
           this.generation = shared.generation ?? 0;
         }
 
-        this.statusMessage = [
+        this.statusMessage = sentences(
           shared.model ?
-            `Loaded a shared run: R² ${this.formatR2(this.bestR2)} after ${this.generation} generation${this.generation === 1 ? '' : 's'}.` :
-            'Loaded shared settings.',
+            t('share.loadedRun', { r2: this.formatR2(this.bestR2), generation: this.generation }) :
+            t('share.loadedSettings'),
           shared.datasetOmitted ?
-            'Its dataset was too large to include; upload it to run.' :
-            'Press Start Evolution to evolve it yourself.'
-        ].join(' ');
+            t('share.datasetMissing') :
+            t('share.pressStart')
+        );
 
         this.drawCanvas();
       } catch (e) {
         console.error(e);
-        this.errorMessages = ['This share link could not be read. It may be incomplete; try copying it again.'];
+        this.errorMessages = [t('share.unreadable')];
       }
 
       // drop the code from the address bar so a reload is a clean start
@@ -1661,10 +1655,7 @@ const Home = {
 
       if (table.headers.length < 2 || !table.rows.length) {
         const skipped = describeSkippedRows(table.skipped);
-        this.errorMessages = [
-          'The CSV needs at least two columns of numbers, separated by commas, semicolons or tabs.' +
-          (skipped ? ` ${skipped}` : '')
-        ];
+        this.errorMessages = [sentences(t('csv.error.columns'), skipped)];
         return;
       }
 
@@ -1879,7 +1870,8 @@ const Home = {
 
       const g = predictedGeometry(valueRange(points.map(p => p.y)), W, H);
       const { plot, toX, toY, range } = g;
-      const name = this.targetName ? ` ${this.targetName}` : '';
+      const name = this.targetName;
+      const hasName = name ? 'yes' : 'no';
 
       this.drawAxes(ctx, colors, {
         plot,
@@ -1888,8 +1880,8 @@ const Home = {
         H,
         xTicks: g.ticks,
         yTicks: g.ticks,
-        xTitle: `actual${name}`,
-        yTitle: `predicted${name}`
+        xTitle: t('chart.axis.actual', { hasName, name }),
+        yTitle: t('chart.axis.predicted', { hasName, name })
       });
 
       ctx.save();
@@ -2047,7 +2039,7 @@ function layoutTree(root) {
 
       item.kind = variable ? 'variable' : 'number';
       item.label = variable ? String(node) : formatShortNumber(node);
-      item.title = variable ? `input ${node}` : formatNumber(node, 12);
+      item.title = variable ? t('tree.input', { name: node }) : formatNumber(node, 12);
       item.color = variable ? 'lightgreen' : 'khaki';
       item.width = treeNodeWidth(item.label);
       item.x = cursor + item.width / 2;
@@ -2114,7 +2106,7 @@ const About = {
 
   data() {
     return {
-      content: 'Loading README.md …'
+      content: I18n.escapeHtml(t('about.loading'))
     };
   },
 
@@ -2131,7 +2123,7 @@ const About = {
       await this.$nextTick();
       this.addHeadingIds();
     } catch (e) {
-      this.content = '<p>Failed to load README.md</p>';
+      this.content = `<p>${I18n.escapeHtml(t('about.failed'))}</p>`;
       console.error(e);
     }
   },
@@ -2188,11 +2180,11 @@ const router = VueRouter.createRouter({
 
 const THEME_KEY = 'equvolve-theme';
 const THEME_ORDER = ['auto', 'light', 'dark'];
-const THEME_LABELS = { auto: '🖥️ Auto', light: '☀️ Light', dark: '🌙 Dark' };
+const THEME_LABELS = { auto: 'theme.auto.label', light: 'theme.light.label', dark: 'theme.dark.label' };
 const THEME_TITLES = {
-  auto: 'Theme follows your device. Click for light.',
-  light: 'Light theme. Click for dark.',
-  dark: 'Dark theme. Click to follow your device.'
+  auto: 'theme.auto.title',
+  light: 'theme.light.title',
+  dark: 'theme.dark.title'
 };
 
 function readThemePreference() {
@@ -2224,10 +2216,10 @@ const app = Vue.createApp({
 
   computed: {
     themeLabel() {
-      return THEME_LABELS[this.themePreference];
+      return t(THEME_LABELS[this.themePreference]);
     },
     themeTitle() {
-      return THEME_TITLES[this.themePreference];
+      return t(THEME_TITLES[this.themePreference]);
     }
   },
 
@@ -2255,4 +2247,11 @@ const app = Vue.createApp({
 
 app.use(router);
 
-app.mount('#app');
+// $t, $th and $list in templates: see t, th and I18n.list.
+app.config.globalProperties.$t = t;
+app.config.globalProperties.$th = th;
+app.config.globalProperties.$list = (items, type) => I18n.list(items, type);
+
+// The page's language is chosen once, before the app is shown, from
+// ?lang=, the stored choice and the browser's languages (see i18n.js).
+I18n.load(I18n.preferredLocale()).then(() => app.mount('#app'));

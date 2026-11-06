@@ -7,7 +7,9 @@ EquVolve is a static site with no build step and no runtime dependencies besides
 ## Architecture
 
 ```
-index.html ──loads──▶ shared.js ──▶ app.js (Vue UI, main thread)
+index.html ──loads──▶ i18n.js ──▶ shared.js ──▶ app.js (Vue UI, main thread)
+                        │                       │
+             locales/<lang>.json                │
                                       │  postMessage({type, config, ...})
                                       ▼
                                    worker.js (GP engine, Web Worker)
@@ -16,7 +18,8 @@ index.html ──loads──▶ shared.js ──▶ app.js (Vue UI, main thread)
 
 - **`shared.js`** holds the code both sides need: the operator table, formula checks and sampling, tree evaluation, simplification, printing and export, CSV parsing (`parseCsv`: one separator per file from `detectCsvDelimiter`, quote-aware `splitCsvLine`, decimal commas unless the file is comma-separated, and `describeCsvFormat` for the note under the loaded file), config validation and normalisation, share links, and what the UI shows about them: the operators a formula needs (`formulaOperators`), every config problem with its field (`validateConfigFields`), R² in words (`fitQuality`), skipped CSV rows in words (`describeSkippedRows`), the sample data (`sampleCsv`), and the charts' layout and colours (`chartSize`, `niceTicks`, `fitGeometry`, `predictedGeometry`, `progressGeometry`, `valueRange`, `linearScale`, `sampleIndices`, `progressLevel`, `progressGrid`, `CHART_COLOR_TOKENS`, `chartColors`), which `app.js` draws with. Keeping these here lets the unit tests and the browser tests use the same logic as the page. The UI draws curves with the same `evaluateTree` the engine scores with, so what you see is what was scored. In Node it exports its functions through `module.exports` for the tests. In the browser they are globals.
 - **`worker.js`** is the engine. It owns the population and the training points, runs generations, and sends results to the page. It never touches the DOM or storage.
-- **`app.js`** is the UI: inputs, validation messages, charts (canvas), the expression tree (SVG), replay, export, share links, IndexedDB persistence, the theme toggle and the About page. The About page fetches `README.md` from the `main` branch on GitHub (`README_URL`) and renders it with Marked. A README change shows up in the live app only once it is merged to `main`. Marked adds no heading IDs, so `addHeadingIds()` gives each heading the anchor GitHub would (`headingSlug()`: lowercase, punctuation removed, spaces as hyphens, `-1`, `-2`, … on repeats). A click on a `#section` link scrolls to it instead of navigating: the routes live in the URL hash, so `#example-results` would otherwise be read as a route and show a blank page.
+- **`i18n.js`** puts the interface into words: it chooses the language (`?lang=`, then the choice stored under `equvolve-language`, then the browser's languages, then English), loads `locales/<lang>.json` before the app mounts, and formats messages written in a subset of ICU MessageFormat (arguments, `plural`, `select`) with the browser's `Intl` plural rules and list formats. `t()` gives text; `html()` gives markup with every parameter escaped, for `v-html`. It also generates the `en-XA` pseudo-locale for testing. The worker never shows text and does not load it. See the [translation guide](TRANSLATING.md) for the message format and the rules for adding text.
+- **`app.js`** is the UI: inputs, validation messages (every word through `t`/`$t`, see `i18n.js`), charts (canvas), the expression tree (SVG), replay, export, share links, IndexedDB persistence, the theme toggle and the About page. The About page fetches `README.md` from the `main` branch on GitHub (`README_URL`) and renders it with Marked. A README change shows up in the live app only once it is merged to `main`. Marked adds no heading IDs, so `addHeadingIds()` gives each heading the anchor GitHub would (`headingSlug()`: lowercase, punctuation removed, spaces as hyphens, `-1`, `-2`, … on repeats). A click on a `#section` link scrolls to it instead of navigating: the routes live in the URL hash, so `#example-results` would otherwise be read as a route and show a blank page.
 
 Routing uses hash history (`#/`, `#/about`), so the site works on any static host, including GitHub Pages. Workers cannot load from `file://`, so serve the folder over HTTP (`python3 -m http.server 8000`).
 
@@ -95,6 +98,8 @@ IndexedDB database `gp-db`, version 2 (the name predates EquVolve; keep it so ol
 
 - **`sessions`** (key path `id`): one record, `id: 'latest'`, with `timestamp`, `generation`, `population` (compressed trees), `model`, `bestFitness`, `bestR2`, `bestSize`, `history`, `series` (`[g, best, median]`), `timeline` (`[g, r2, fitness, compressedModel]`), and `config` (the full config the run ran with, dataset included, plus `uploadedFileName`; settings edited since, but not yet used by a Resume or New run, are not saved). Older records may store the best program as `best` instead of `model`; `restoreSession` accepts both.
 - **`bestPrograms`** (auto-increment `id`): `{ timestamp, fitness, r2, tree, generation }` for each improvement. Written but not read by the UI.
+
+The interface language, once a language switcher exists, is stored in `localStorage` under `equvolve-language`; `?lang=<code>` in the address (before the `#`) overrides it.
 
 The theme preference lives in `localStorage` under `equvolve-theme` (`'light'` or `'dark'`; absent means Auto). A small inline script in `index.html` applies it before the first paint.
 
