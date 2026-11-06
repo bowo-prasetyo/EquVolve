@@ -46,11 +46,11 @@ It is built for **learning and exploring** how GP works, with light practical us
 
 **Generate from formula:** enter a target formula and an X range.
 
-- Formulas are arithmetic expressions in `x`. Every name on JavaScript's `Math` is available, so `sin(x)`, `pow(x, 2)`, `exp(-x*x)`, `abs(x)` and `PI * x` work, as does `Math.sin(x)`.
-- Nothing else is allowed (no other names, strings, brackets or statements). This keeps formulas from shared links safe to open.
+- Formulas are arithmetic expressions in `x` using numbers, parentheses, commas and the operators `+ - * / % **`. Every name on JavaScript's `Math` is available, so `sin(x)`, `pow(x, 2)`, `exp(-x*x)`, `abs(x)` and `PI * x` work, as does `Math.sin(x)`.
+- Nothing else is allowed (no other names, strings, square brackets or statements). This keeps formulas from shared links safe to open.
 - Because results use the same syntax, you can paste a result back in as a new target.
-- **Sample points** (default 101) are spaced evenly across the X range. The engine trains on exactly these points, and the graph plots exactly these points.
-- Points where the formula is not finite (for example `1/x` at `x = 0`) are skipped.
+- **Sample points** (default 101, from 2 to 10,000) are spaced evenly across the X range, both ends included. The engine trains on exactly these points. The graph draws the same points, thinned to about 60 markers when there are more.
+- Points where the formula is not finite (for example `1/x` at `x = 0`) are skipped. At least two finite points are needed.
 
 **Upload dataset:** upload a CSV with numeric columns, usually with a header row:
 
@@ -61,10 +61,10 @@ height,width,depth,price
 ```
 
 - One column is the **target** to predict: the last one by default. With three or more columns, a **Target column** menu lets you choose another.
-- Every other column becomes an **input variable** (up to 10), named after its header. Names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`, and a name that clashes with a function or keyword gets a `v_` prefix.
-- With a **single input**, the variable is called `x` and the graph plots the data with the fitted curve. With **several inputs** the graph plots each row's prediction against its actual value.
-- Commas, semicolons and tabs all work as separators. A first row that is all numbers is treated as data, and the columns are called `x1`, `x2`, … and `y`.
-- Rows with missing or non-numeric values are ignored. Every valid row is used for training.
+- Every other column becomes an **input variable**, named after its header. Only the first 10 input columns are used; any after that are ignored. Names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`. A name that starts with a digit, or clashes with a `Math` name or a JavaScript or Python keyword, gets a `v_` prefix (`sin` becomes `v_sin`). Repeated names get `_2`, `_3`, … appended.
+- With a **single input**, the variable is called `x` and the graph plots the data with the fitted curve. With **several inputs** the graph plots each row's prediction against its actual value (up to 400 rows are drawn).
+- Commas, semicolons and tabs all work as separators, and can be mixed. Quoted cells are unquoted, but a quoted cell cannot contain a separator. A first row that is all numbers is treated as data, and the columns are called `x1`, `x2`, … and `y`.
+- Rows with too few cells or a non-numeric value are skipped, and cells beyond the header's width are ignored. Every other row is used for training. **An empty cell (as in `1.5,,3`) is currently read as 0, not skipped**, so remove or fill incomplete rows first.
 
 ### 2. Configure the run
 
@@ -72,18 +72,18 @@ Every setting has a short explanation under it in the app.
 
 | Setting            | Meaning                                                                                       | Default |
 | ------------------ | --------------------------------------------------------------------------------------------- | ------- |
-| Population Size    | Programs per generation (constant for the whole run)                                          | 200     |
+| Population Size    | Programs per generation (constant for the whole run; at least 2)                              | 200     |
 | Max Generations    | Stop after this many generations                                                              | 500     |
-| Target R²          | Stop as soon as the best program reaches this R² (1 = perfect fit)                            | 0.999   |
-| Crossover Rate     | Probability that an offspring is made by subtree crossover rather than copying a parent        | 0.7     |
-| Mutation Rate      | Probability that an offspring is then mutated                                                 | 0.1     |
-| Elitism Rate       | Fraction of the best programs copied unchanged into the next generation                       | 0.05    |
-| Tournament Size    | Programs compared in each selection tournament; larger is greedier                            | 5       |
+| Target R²          | Stop as soon as the best program reaches this R² (1 = perfect fit; at most 1)                 | 0.999   |
+| Crossover Rate     | Probability (0–1) that an offspring is made by subtree crossover rather than copying a parent  | 0.7     |
+| Mutation Rate      | Probability (0–1) that an offspring is then mutated                                           | 0.1     |
+| Elitism Rate       | Fraction (0–1) of the best programs copied unchanged into the next generation                 | 0.05    |
+| Tournament Size    | Programs compared in each selection tournament (at least 1); larger is greedier               | 5       |
 | Initial Tree Depth | Maximum depth of the random programs that start the run (1–12)                                | 4       |
-| Max Tree Depth     | Hard depth limit for evolved programs, to stop them bloating (up to 17)                       | 8       |
+| Max Tree Depth     | Hard depth limit for evolved programs, to stop them bloating (from Initial Tree Depth to 17)  | 8       |
 | Linear scaling     | Score each program as `a + b·f(x)` with the best-fitting `a` and `b`                          | on      |
 | Constant optimisation | Experimental: fine-tune the constants of a random 10% of programs each generation. It did not improve results in our benchmark (see [How it works](#constant-optimisation-experimental)). | off |
-| Speed              | **Fast:** as many generations as fit in about 40 ms between screen updates. **Slow:** one generation per update, about 6 per second, for watching. | Fast |
+| Speed              | **Fast:** as many generations as fit in about 40 ms per screen update. **Slow:** one generation per update with a 150 ms pause (at most about 6 per second), for watching. | Fast |
 | Operators          | The building blocks the search may use                                                        | `+ - *` |
 
 The defaults were checked with the benchmark described under [Example results](#example-results). Crossover 0.8, mutation 0.2 and elitism 0.02 did slightly worse on the harder targets.
@@ -103,27 +103,32 @@ All operators:
 | running | **Running…** (disabled), **Stop**                    | Settings are locked.                             |
 | paused  | **Clear Results**, **Resume**, **Copy share link**   | Settings are editable; Resume applies changes.   |
 
+**Copy share link** appears whenever a best program is shown and no run is going, including in the idle state after you open a share link. Settings are checked when you press **Start Evolution** or **Resume**, and any problems are listed above the buttons.
+
 A run pauses on its own when it reaches the target R² or Max Generations, and a status message says which. To keep going after hitting Max Generations, raise it and press **Resume**.
 
-**Clear Results** stops the worker, clears the results, and deletes the stored session.
+**Clear Results** asks for confirmation, then stops the worker, clears the results, and deletes the stored session and the best-program log (see [Persistence](#persistence)).
 
 ### 4. Read the results
 
-- **Best program:** the simplified formula. The tabs switch between a plain formula, JavaScript (`const f = (x) => …`), Python (`def f(x): …` using `math`) and LaTeX. With several inputs the function takes them as parameters, for example `(height, width, depth) => …`. **Copy** puts the current tab on the clipboard. Exported code keeps 12 significant digits; the on-screen formula shows 5.
+- **Best program:** the simplified formula. The tabs switch between a plain formula, JavaScript (`const f = (x) => …`), Python (`def f(x): …` using `math`) and LaTeX. With several inputs the function takes them as parameters, for example `(height, width, depth) => …`. **Copy** puts the current tab on the clipboard. The JavaScript and Python exports keep 12 significant digits; the formula and LaTeX tabs, like the on-screen formula, show 5. Python writes powers as `**`, and a program that uses `cbrt` gets a comment that `math.cbrt` needs Python 3.11 or later.
 - **Replay:** after a run (or while paused), **▶ Replay** plays through every improvement of the best program, and the slider jumps to any of them. The formula, export, fit chart and tree all follow the replay; the progress chart marks its generation in blue. **Back to latest** returns to the current best.
 - **Fit:** with one input, the data (cyan) and the best program (red). With several inputs, predicted against actual values for each row; points on the red diagonal are predicted exactly.
-- **Progress:** 1 − R² of the best (red) and median (grey) program in each generation, on a log scale, so the step from R² 0.99 to 0.9999 is as visible as the step from 0 to 0.9. The dashed green line is your target.
+- **Progress:** 1 − R² of the best (red) and median (grey) program in each generation, on a log scale, so the step from R² 0.99 to 0.9999 is as visible as the step from 0 to 0.9. The axis runs from 1 − R² = 1 down to 10⁻⁶, and values outside that range are drawn at the edge. The dashed green line is your target.
 - **Expression tree:** orange operators, green variables, khaki constants. It scales to fit the page.
 - **Program size:** the number of nodes in the program as shown.
-- **Speed:** generations per second.
+- **Speed:** generations per second, smoothed.
+- **Recent generations:** the best program from each of the last five screen updates, newest first. In Fast mode one update covers many generations.
 
 ### 5. Share a run
 
-After a run, **Copy share link** copies a link to this page that contains the settings, the dataset (if it has at most 2,000 points) and the best program. Opening it loads them, ready to run, without touching the visitor's own saved session. The population is not included, so the recipient starts a new run rather than continuing yours.
+After a run, **Copy share link** copies a link to this page that contains the settings, the uploaded dataset (if it has at most 2,000 rows) and the best program. In formula mode the link carries the formula, not the sampled points. If the dataset is larger, the link leaves it out and the recipient is asked to upload it. The link is also shown in a text box below the buttons, so it can be copied by hand if the clipboard is unavailable.
+
+Opening a link loads its contents, ready to run. It does not offer to restore the visitor's own saved session, and it leaves that session alone until the visitor starts a run. The population is not included, so the recipient starts a new run rather than continuing yours.
 
 ### 6. Restore after closing the browser
 
-On load, if a stored session exists, the app asks whether to restore it. A restored session comes back paused with its population, generation, best program, progress chart, replay timeline, settings and dataset. Press **Resume** to continue.
+On load, if a stored session exists, the app asks (in a browser confirmation dialog) whether to restore it. A restored session comes back paused with its population, generation, best program, recent generations, progress chart, replay timeline, settings and dataset. Press **Resume** to continue. Declining keeps the stored session; it is replaced when the next run saves a checkpoint.
 
 ---
 
@@ -131,9 +136,9 @@ On load, if a stored session exists, the app asks whether to restore it. A resto
 
 ### Representation
 
-Programs are expression trees. Leaves are input variables (`x`, or the dataset's column names) or random constants drawn from [-10, 10]. Internal nodes are the enabled operators.
+Programs are expression trees. Leaves are input variables (`x`, or the dataset's column names) or random constants drawn uniformly from [-10, 10] with three decimals; a new leaf is a variable or a constant with equal probability. Internal nodes are the enabled operators. A leaf has depth 0.
 
-The first generation is created with *ramped half-and-half*: depths 2 up to Initial Tree Depth, half of them "full" (every branch to the maximum depth) and half "grow" (branches may stop early), so it starts with a wide variety of shapes.
+The first generation is created with *ramped half-and-half*: depths 2 up to Initial Tree Depth (just 1 if Initial Tree Depth is 1), half of them "full" (every branch to the maximum depth) and half "grow" (branches may stop early), so it starts with a wide variety of shapes.
 
 ### Fitness
 
@@ -154,10 +159,10 @@ The small size penalty discourages bloat. A program that produces a non-finite v
 3. Build the next generation of exactly *Population Size* programs:
    - **Elites:** the top *Elitism Rate* fraction, copied unchanged.
    - **Immigrants:** 10% brand-new random programs, to maintain diversity.
-   - **Offspring:** the rest. Each picks a parent by tournament selection. With probability *Crossover Rate* a random subtree of that parent is replaced by a random subtree of a second parent (90% of the time an operator node is chosen, so crossover moves real structure). Children deeper than Max Tree Depth are rejected and retried. Then, with probability *Mutation Rate*, the child is mutated.
-4. Mutation is either:
-   - **subtree mutation:** a random subtree is replaced by a new random one; or
-   - **point mutation:** one node changes. An operator becomes another of the same arity, `x` becomes a constant or vice versa, or a constant is nudged by a coarse, medium or fine step (about ±1, ±0.1 or ±0.01 of its size), so constants can be both moved and fine-tuned.
+   - **Offspring:** the rest. Each picks a parent by tournament selection. With probability *Crossover Rate* a random subtree of that parent is replaced by a random subtree of a second parent (90% of the time an operator node is chosen, so crossover moves real structure). A child deeper than Max Tree Depth is rejected and the crossover retried; after 5 failed attempts the first parent is copied instead. Otherwise the parent is copied unchanged. Then, with probability *Mutation Rate*, the child is mutated.
+4. Mutation is, with equal probability, either:
+   - **subtree mutation:** a random node is replaced by a new random "grow" subtree, no deeper than Initial Tree Depth and never pushing the program past Max Tree Depth; or
+   - **point mutation:** one random node changes. An operator becomes another enabled operator of the same arity (if there is one). A constant is usually (70% of the time) nudged by a random coarse, medium or fine step (up to ±1×, ±0.1× or ±0.01× its size; sizes below 1 count as 1), so constants can be both moved and fine-tuned. Any other leaf is replaced by a new random leaf: a variable or a constant.
 
 ### Constant optimisation (experimental)
 
@@ -182,7 +187,7 @@ Polishing the best programs' constants makes them win most tournaments, so the p
 
 ### Speed
 
-In **Fast** mode the worker runs generations back to back for about 40 ms, then sends one update covering all of them. Every generation is still added to the progress chart and replay. The full population, needed only for checkpoints, is sent every 10 generations, on Stop and on finish. This replaces Phase 2's fixed 50 ms pause per generation, which capped runs at about 20 generations per second. A population of 200 now runs at roughly 60–100 generations per second in a typical browser, depending on the operators. **Slow** mode sends every generation with a 150 ms pause.
+In **Fast** mode the worker runs generations back to back for about 40 ms, then sends one update covering all of them and pauses for 5 ms. Every generation is still added to the progress chart and replay (subject to the limits under [Known limitations](#known-limitations)). The full population, needed only for checkpoints, is sent every 10 generations, on Stop and on finish. This replaces Phase 2's fixed 50 ms pause per generation, which capped runs at about 20 generations per second. A population of 200 now runs at roughly 60–100 generations per second in a typical browser, depending on the operators. **Slow** mode sends every generation with a 150 ms pause.
 
 ### Simplification
 
@@ -200,10 +205,10 @@ The simplified program is then checked against the original on every training po
 
 Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVolve and is kept so older sessions still restore):
 
-- `sessions` holds a single checkpoint of the latest run: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, recent history, the progress chart and the replay timeline (up to 300 snapshots). It is written whenever the best fitness improves, at least every 10 generations, and on Stop, finish, or page unload.
-- `bestPrograms` keeps a log of each new best program. It is not shown in the UI yet.
+- `sessions` holds a single checkpoint of the latest run, under the key `latest`: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, the recent generations, the progress chart and the replay timeline (up to 300 snapshots). It is checked on every update from the worker and written when the best fitness has improved or at least 10 generations have passed since the last write. It is also written on Stop, when a run finishes, and if the page is closed during a run. The population saved on Stop or finish is exact; between those, it may be up to 10 generations older than the rest of the checkpoint.
+- `bestPrograms` keeps a log of each new best program (time, fitness, R², generation and tree). It is not shown in the UI yet.
 
-Everything stays in your browser; clearing site data deletes it.
+**Clear Results** empties both stores. The theme choice is stored separately, in `localStorage` under `equvolve-theme`. Everything stays in your browser; clearing site data deletes it.
 
 ### Known limitations
 
@@ -211,12 +216,14 @@ Everything stays in your browser; clearing site data deletes it.
 - **Formula mode has one variable** (`x`); several variables need a CSV.
 - **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
 - **The replay keeps up to 300 snapshots.** In longer runs, intermediate improvements are thinned out; the first and latest are always kept.
+- **The progress chart keeps up to 1,000 points.** Beyond that, every other point is dropped (the latest is always kept), so very long runs are drawn at a coarser resolution.
+- **Empty CSV cells are read as 0** rather than skipping the row; see [Choose a data source](#1-choose-a-data-source).
 
 ---
 
 ## Example results
 
-`npm run bench` measures how often the engine reaches R² ≥ 0.999 within 200 generations, using the default settings, population 200, and x in [-3, 3]. Each target is run 20 times. GP is stochastic, so your runs will differ, and a difference of a few runs out of 20 is within noise.
+`npm run bench` measures how often the engine reaches R² ≥ 0.999 within 200 generations, using the default settings (population 200, linear scaling on, constant optimisation off), 101 sample points and x in [-3, 3]. Each target is run 20 times. A full run takes about 15 minutes; see [Benchmark](#benchmark) for shorter runs. GP is stochastic, so your runs will differ, and a difference of a few runs out of 20 is within noise.
 
 | Target              | Operators         | Phase 1 | Phase 2 | This version | Median generations | Example result (this version)                         |
 | ------------------- | ----------------- | ------- | ------- | ------------ | ------------------ | ----------------------------------------------------- |
@@ -253,21 +260,43 @@ The engine and shared helpers (simplifier, exporters, CSV parsing, share links, 
 npm test
 ```
 
-Tests run on every push and pull request via GitHub Actions.
+To run one file:
+
+```bash
+node --test test/shared.test.js
+```
+
+Tests run on Node 22 on every push and pull request via GitHub Actions (`.github/workflows/test.yml`). The UI (`app.js`) has no automated tests; check UI changes by hand in a browser.
+
+### Benchmark
+
+```bash
+npm run bench
+```
+
+This prints a Markdown table like the one under [Example results](#example-results). Two optional arguments set the number of runs per target and pick a single target by its 0-based index, for example to run targets in parallel:
+
+```bash
+node bench/benchmark.js 5 3
+```
+
+For how the engine, UI and tests fit together, see the [developer guide](docs/DEVELOPMENT.md).
 
 ### Project structure
 
 | File            | Purpose                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------- |
-| `index.html`    | Page shell; loads pinned versions of Vue, Vue Router and Marked from jsDelivr                 |
+| `index.html`    | Page shell; applies the saved theme before the first paint, and loads pinned versions of Vue, Vue Router and Marked from jsDelivr |
 | `shared.js`     | Code shared by UI and engine: evaluation, formula sampling and checks, simplification, export, share links, config validation |
 | `worker.js`     | The GP engine (runs in a Web Worker)                                                           |
-| `app.js`        | Vue UI: inputs, visualisation, persistence, About page                                        |
-| `style.css`     | Styles                                                                                        |
-| `test/`         | Headless Node tests (`node:test`)                                                             |
+| `app.js`        | Vue UI: inputs, visualisation, persistence, replay, share links, theme toggle, About page     |
+| `style.css`     | Styles, with light and dark colour tokens                                                     |
+| `test/`         | Headless Node tests (`node:test`); `helpers.js` loads `worker.js` in a simulated Web Worker   |
 | `bench/`        | `npm run bench`: how often the engine reaches R² ≥ 0.999 on six targets                       |
 | `assets/`       | Logo: `logo-mark.svg` (the icon), and `logo-on-dark.svg` / `logo-on-light.svg` (icon with the EquVolve wordmark) |
 | `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` | Browser and home-screen icons |
+| `docs/`         | [Developer guide](docs/DEVELOPMENT.md): architecture, worker messages, data formats       |
+| `.github/workflows/test.yml` | CI: runs `npm test` on Node 22                                                  |
 
 The About page renders this README, fetched live from the `main` branch.
 
