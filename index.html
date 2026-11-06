@@ -9,6 +9,15 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="theme-color" content="#111111">
 
+  <!-- Apply a theme picked with the toggle before the first paint, so the
+       page never flashes the other theme. "auto" follows the device. -->
+  <script>
+    try {
+      var theme = localStorage.getItem('equvolve-theme');
+      if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) {}
+  </script>
+
   <!-- Pinned versions: an unpinned major release could break the live demo. -->
   <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/vue-router@4.5.0/dist/vue-router.global.prod.js"></script>
@@ -22,6 +31,7 @@
   <nav>
     <router-link to="/">Home</router-link>
     <router-link to="/about">About</router-link>
+    <button type="button" class="theme-toggle small" :title="themeTitle" :aria-label="themeTitle" @click="cycleTheme">{{ themeLabel }}</button>
   </nav>
 
   <router-view></router-view>
