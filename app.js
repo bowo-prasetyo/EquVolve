@@ -1,4 +1,4 @@
-// Vue UI for the Browser Genetic Programming playground.
+// Vue UI for EquVolve, the in-browser genetic programming playground.
 // Shared helpers come from shared.js (loaded first in index.html).
 
 const OPERATOR_GROUPS = [
@@ -71,7 +71,7 @@ const Home = {
   <div class="container">
 
     <header class="page-header">
-      <h1>Browser Genetic Programming</h1>
+      <h1>EquVolve</h1>
       <p class="tagline">
         Evolve a formula that explains your data, live and entirely in your browser.
       </p>
@@ -574,6 +574,7 @@ const Home = {
 
     initDB(offerRestore = true) {
 
+      // The name predates EquVolve; keep it so sessions saved before the rename still restore.
       const request = indexedDB.open('gp-db', 2);
 
       request.onupgradeneeded = (e) => {
