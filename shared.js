@@ -1248,18 +1248,46 @@ function buildSharePayload({ config, model, r2, generation, fileName }) {
 // The geometry of the fit and progress charts drawn in app.js, kept as
 // plain functions so it can be tested without a canvas.
 
-// Colours drawn on the charts' canvases (which have a white background
-// in both themes).
-const CHART_COLORS = {
-  data: '#00b7c7',   // data points
-  model: 'red',      // best program, perfect-prediction diagonal
-  median: '#999',    // median program on the progress chart
-  target: 'green',   // dashed target R² line
-  replay: '#3366cc', // replay position on the progress chart
-  grid: '#ddd',
-  frame: '#ccc',
-  text: '#555'
+// The charts' colours come from the theme: each role is a CSS custom
+// property on <html>, the same ones the charts' caption keys use, so the
+// lines and points always match their keys. The canvas background is
+// --chart-bg (see style.css).
+const CHART_COLOR_TOKENS = {
+  data: '--key-cyan',    // data points
+  model: '--key-red',    // best program, perfect-prediction diagonal
+  median: '--key-grey',  // median program on the progress chart
+  target: '--key-green', // dashed target R² line
+  replay: '--key-blue',  // replay position on the progress chart
+  grid: '--chart-grid',
+  frame: '--chart-frame',
+  text: '--chart-text'
 };
+
+// Used when a token is not defined (for example outside the page).
+const CHART_COLOR_FALLBACKS = {
+  data: '#00b7c7',
+  model: '#ff5a5a',
+  median: '#bbb',
+  target: '#4c4',
+  replay: '#6b9bff',
+  grid: '#333',
+  frame: '#555',
+  text: '#aaa'
+};
+
+// The chart colours, resolving each token with `read(name)`, which
+// returns the property's value or an empty string. In the page:
+//   chartColors(name => getComputedStyle(document.documentElement).getPropertyValue(name))
+function chartColors(read) {
+  const colors = {};
+
+  for (const [role, token] of Object.entries(CHART_COLOR_TOKENS)) {
+    const value = String(read(token) || '').trim();
+    colors[role] = value || CHART_COLOR_FALLBACKS[role];
+  }
+
+  return colors;
+}
 
 // The progress chart shows 1 - R² on a log scale from 1 (R² = 0) down to
 // 10^PROGRESS_MIN_LOG (R² = 0.999999).
@@ -1328,7 +1356,9 @@ function progressGrid(minLog = PROGRESS_MIN_LOG) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    CHART_COLORS,
+    CHART_COLOR_TOKENS,
+    CHART_COLOR_FALLBACKS,
+    chartColors,
     PROGRESS_MIN_LOG,
     valueRange,
     linearScale,

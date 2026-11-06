@@ -25,7 +25,7 @@ It is built for **learning and exploring** how GP works, with light practical us
 - **Share links:** one click copies a link containing the settings, the data (up to 2,000 points) and the best program.
 - **Linear scaling** (on by default): evolution only has to find the *shape* of the data; the best offset and scale are fitted exactly.
 - **Configurable search:** population, generations, target R², crossover / mutation / elitism rates, tournament size, tree depths, and 23 operators with presets.
-- **Light and dark themes:** follows your device's setting by default; the button in the top bar switches between Auto, Light and Dark, and the choice is remembered in this browser.
+- **Light and dark themes:** the whole page, charts included, follows your device's setting by default; the button in the top bar switches between Auto, Light and Dark, and the choice is remembered in this browser.
 - **Pause, resume and restore:** stop a run, change settings, and resume. The session is checkpointed to IndexedDB, so it survives closing the tab or restarting the browser.
 - **Input validation:** invalid formulas, ranges or settings are reported before a run starts.
 
@@ -217,7 +217,6 @@ Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVo
 - **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
 - **The replay keeps up to 300 snapshots.** In longer runs, intermediate improvements are thinned out; the first and latest are always kept.
 - **The progress chart keeps up to 1,000 points.** Beyond that, every other point is dropped (the latest is always kept), so very long runs are drawn at a coarser resolution.
-- **The charts do not follow the theme.** They are drawn on a white background in both themes, in fixed colours that differ slightly from the colour keys in their captions.
 ---
 
 ## Example results

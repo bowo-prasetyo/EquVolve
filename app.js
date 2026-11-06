@@ -64,6 +64,9 @@ const MAX_TIMELINE = 300;
 const HISTORY_LENGTH = 5;
 const REPLAY_INTERVAL_MS = 450;
 
+// Sent on window whenever the theme is applied (see applyTheme).
+const THEME_CHANGE_EVENT = 'equvolve:themechange';
+
 // At most this many data points are drawn on the fit chart (the engine
 // still trains on all of them).
 const FIT_MAX_POINTS = 60;
@@ -549,6 +552,13 @@ const Home = {
     this.drawCanvas();
     this.drawProgress();
 
+    // redraw the charts in the new colours when the theme changes
+    this.redrawCharts = () => {
+      this.drawCanvas();
+      this.drawProgress();
+    };
+    window.addEventListener(THEME_CHANGE_EVENT, this.redrawCharts);
+
     window.addEventListener('beforeunload', () => {
       if (this.evolutionState === 'running') {
         this.saveCheckpoint(true);
@@ -558,6 +568,7 @@ const Home = {
 
   beforeUnmount() {
     this.pauseReplay();
+    window.removeEventListener(THEME_CHANGE_EVENT, this.redrawCharts);
 
     if (this.worker) {
       this.worker.terminate();
@@ -1186,6 +1197,13 @@ const Home = {
     // DRAWING
     // =========================
 
+    // The theme's chart colours, read when drawing so they follow a
+    // theme switch.
+    chartColors() {
+      const style = getComputedStyle(document.documentElement);
+      return chartColors((name) => style.getPropertyValue(name));
+    },
+
     drawCanvas() {
       const canvas = this.$refs.canvas;
 
@@ -1199,8 +1217,10 @@ const Home = {
 
       if (!points.length) return;
 
+      const colors = this.chartColors();
+
       if (this.isMultiVariable) {
-        this.drawPredictedVsActual(ctx, canvas, points);
+        this.drawPredictedVsActual(ctx, canvas, points, colors);
         return;
       }
 
@@ -1244,14 +1264,14 @@ const Home = {
           }
         }
 
-        ctx.strokeStyle = CHART_COLORS.model;
+        ctx.strokeStyle = colors.model;
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.restore();
       }
 
       // data points (downsampled for drawing only)
-      ctx.fillStyle = CHART_COLORS.data;
+      ctx.fillStyle = colors.data;
 
       for (const i of sampleIndices(points.length, FIT_MAX_POINTS)) {
         const p = points[i];
@@ -1264,7 +1284,7 @@ const Home = {
 
     // With several inputs there is no single x axis: plot each row's
     // prediction against its actual value instead.
-    drawPredictedVsActual(ctx, canvas, points) {
+    drawPredictedVsActual(ctx, canvas, points, colors) {
       const model = this.displayModel;
       const pairs = sampleIndices(points.length, PREDICTED_MAX_POINTS).map((i) => {
         const p = points[i];
@@ -1282,9 +1302,9 @@ const Home = {
       ctx.save();
 
       // axes box and labels
-      ctx.strokeStyle = CHART_COLORS.frame;
+      ctx.strokeStyle = colors.frame;
       ctx.strokeRect(left, pad, size, size);
-      ctx.fillStyle = CHART_COLORS.text;
+      ctx.fillStyle = colors.text;
       ctx.font = '11px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('actual', left + size / 2, canvas.height - 8);
@@ -1295,7 +1315,7 @@ const Home = {
       ctx.restore();
 
       // perfect-prediction diagonal
-      ctx.strokeStyle = CHART_COLORS.model;
+      ctx.strokeStyle = colors.model;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(toX(lo), toY(lo));
@@ -1306,7 +1326,7 @@ const Home = {
       ctx.rect(left, pad, size, size);
       ctx.clip();
 
-      ctx.fillStyle = CHART_COLORS.data;
+      ctx.fillStyle = colors.data;
 
       for (const [actual, predicted] of pairs) {
         if (!Number.isFinite(predicted)) continue;
@@ -1324,6 +1344,7 @@ const Home = {
       if (!canvas) return;
 
       const ctx = canvas.getContext('2d');
+      const colors = this.chartColors();
       const W = canvas.width;
       const H = canvas.height;
       const left = 84;
@@ -1342,8 +1363,8 @@ const Home = {
       const toY = (r2) => levelToY(progressLevel(r2));
 
       // y grid: R² = 0, 0.9, 0.99, ...
-      ctx.strokeStyle = CHART_COLORS.grid;
-      ctx.fillStyle = CHART_COLORS.text;
+      ctx.strokeStyle = colors.grid;
+      ctx.fillStyle = colors.text;
       ctx.textAlign = 'right';
 
       for (const { r2, label } of progressGrid()) {
@@ -1370,7 +1391,7 @@ const Home = {
 
         ctx.save();
         ctx.setLineDash([6, 4]);
-        ctx.strokeStyle = CHART_COLORS.target;
+        ctx.strokeStyle = colors.target;
         ctx.beginPath();
         ctx.moveTo(left, y);
         ctx.lineTo(W - right, y);
@@ -1401,12 +1422,12 @@ const Home = {
       };
 
       if (this.series.length) {
-        line('median', CHART_COLORS.median, 1.5);
-        line('best', CHART_COLORS.model, 2);
+        line('median', colors.median, 1.5);
+        line('best', colors.model, 2);
 
         // mark the latest best so a one-generation run is visible too
         const last = this.series[this.series.length - 1];
-        ctx.fillStyle = CHART_COLORS.model;
+        ctx.fillStyle = colors.model;
         ctx.beginPath();
         ctx.arc(toX(last.g), toY(last.best), 3.5, 0, Math.PI * 2);
         ctx.fill();
@@ -1416,7 +1437,7 @@ const Home = {
       if (this.replayEntry) {
         const x = toX(this.replayEntry.g);
 
-        ctx.strokeStyle = CHART_COLORS.replay;
+        ctx.strokeStyle = colors.replay;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(x, top);
@@ -1599,6 +1620,9 @@ function applyTheme(preference) {
   // Keep the mobile browser's toolbar colour in step with the page.
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = getComputedStyle(root).getPropertyValue('--bg').trim();
+
+  // Canvas drawings do not follow CSS, so tell the charts to redraw.
+  window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
 }
 
 const app = Vue.createApp({

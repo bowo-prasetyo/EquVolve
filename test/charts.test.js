@@ -101,8 +101,44 @@ test('the progress chart puts R² 0.999 halfway down', () => {
   close(toY(s.progressLevel(1)), bottom);
 });
 
-test('every chart colour is defined', () => {
-  for (const key of ['data', 'model', 'median', 'target', 'replay', 'grid', 'frame', 'text']) {
-    assert.equal(typeof s.CHART_COLORS[key], 'string', key);
+const ROLES = ['data', 'model', 'median', 'target', 'replay', 'grid', 'frame', 'text'];
+
+test('every chart colour comes from a theme token, with a fallback', () => {
+  assert.deepEqual(Object.keys(s.CHART_COLOR_TOKENS).sort(), [...ROLES].sort());
+  assert.deepEqual(Object.keys(s.CHART_COLOR_FALLBACKS).sort(), [...ROLES].sort());
+
+  // lines and points use the caption keys' tokens, so they always match
+  assert.equal(s.CHART_COLOR_TOKENS.data, '--key-cyan');
+  assert.equal(s.CHART_COLOR_TOKENS.model, '--key-red');
+  assert.equal(s.CHART_COLOR_TOKENS.median, '--key-grey');
+  assert.equal(s.CHART_COLOR_TOKENS.target, '--key-green');
+  assert.equal(s.CHART_COLOR_TOKENS.replay, '--key-blue');
+});
+
+test('chartColors resolves the tokens and falls back for missing ones', () => {
+  const css = { '--key-cyan': ' #00808c ', '--key-red': '#d32f2f', '--chart-grid': '' };
+  const colors = s.chartColors(name => css[name]);
+
+  assert.equal(colors.data, '#00808c', 'trimmed');
+  assert.equal(colors.model, '#d32f2f');
+  assert.equal(colors.grid, s.CHART_COLOR_FALLBACKS.grid, 'empty value');
+  assert.equal(colors.replay, s.CHART_COLOR_FALLBACKS.replay, 'missing value');
+  assert.deepEqual(Object.keys(colors).sort(), [...ROLES].sort());
+});
+
+test('every chart token is defined in each theme of style.css', () => {
+  const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'style.css'), 'utf8');
+
+  // the dark default, light by device setting, and light by choice
+  const blocks = [
+    css.match(/:root \{([^}]*)\}/)[1],
+    css.match(/:root:not\(\[data-theme="dark"\]\) \{([^}]*)\}/)[1],
+    css.match(/:root\[data-theme="light"\] \{([^}]*)\}/)[1]
+  ];
+
+  for (const [i, block] of blocks.entries()) {
+    for (const token of [...Object.values(s.CHART_COLOR_TOKENS), '--chart-bg']) {
+      assert.match(block, new RegExp(`${token}:\\s*#[0-9a-f]{3,6};`), `${token} in theme block ${i}`);
+    }
   }
 });

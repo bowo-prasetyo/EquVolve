@@ -14,7 +14,7 @@ index.html ──loads──▶ shared.js ──▶ app.js (Vue UI, main thread)
                                       └─ importScripts('shared.js')
 ```
 
-- **`shared.js`** holds the code both sides need: the operator table, formula checks and sampling, tree evaluation, simplification, printing and export, CSV parsing, config validation and normalisation, share links, and the charts' geometry and colours (`valueRange`, `linearScale`, `sampleIndices`, `progressLevel`, `progressGrid`, `CHART_COLORS`), which `app.js` draws with. The UI draws curves with the same `evaluateTree` the engine scores with, so what you see is what was scored. In Node it exports its functions through `module.exports` for the tests. In the browser they are globals.
+- **`shared.js`** holds the code both sides need: the operator table, formula checks and sampling, tree evaluation, simplification, printing and export, CSV parsing, config validation and normalisation, share links, and the charts' geometry and colours (`valueRange`, `linearScale`, `sampleIndices`, `progressLevel`, `progressGrid`, `CHART_COLOR_TOKENS`, `chartColors`), which `app.js` draws with. The UI draws curves with the same `evaluateTree` the engine scores with, so what you see is what was scored. In Node it exports its functions through `module.exports` for the tests. In the browser they are globals.
 - **`worker.js`** is the engine. It owns the population and the training points, runs generations, and sends results to the page. It never touches the DOM or storage.
 - **`app.js`** is the UI: inputs, validation messages, charts (canvas), the expression tree (SVG), replay, export, share links, IndexedDB persistence, the theme toggle and the About page. The About page fetches `README.md` from the `main` branch on GitHub (`README_URL`) and renders it with Marked. A README change shows up in the live app only once it is merged to `main`. Marked adds no heading IDs, so `addHeadingIds()` gives each heading the anchor GitHub would (`headingSlug()`: lowercase, punctuation removed, spaces as hyphens, `-1`, `-2`, … on repeats). A click on a `#section` link scrolls to it instead of navigating: the routes live in the URL hash, so `#example-results` would otherwise be read as a route and show a blank page.
 
@@ -141,7 +141,7 @@ npm test
 | `phase2-shared.test.js` | Simplifier, printing, JavaScript/Python/LaTeX export, formula safety, share links, `normalizeConfig` |
 | `phase3-engine.test.js` | Batching and speed, population cadence, replay timeline, constant optimisation, multi-variable runs |
 | `phase3-shared.test.js` | Multiple variables, CSV parsing and variable names, multi-variable export, validation and share links |
-| `charts.test.js` | Chart geometry: value ranges, linear scales (including upside-down y axes), point thinning, the progress chart's clamped log scale and its grid labels |
+| `charts.test.js` | Chart geometry: value ranges, linear scales (including upside-down y axes), point thinning, the progress chart's clamped log scale and its grid labels; the chart colour tokens, their fallbacks, and every token being defined in each theme of `style.css` |
 
 ### Browser tests
 
@@ -168,6 +168,7 @@ npm run test:ui
 | `about.test.js` | The README rendering (logo and tables included), GitHub-style heading anchors, every in-page link pointing at a heading, links scrolling instead of changing the route, and the message when the README cannot be loaded |
 | `operator-presets.test.js` | A checkbox for each of the 23 operators, each preset ticking exactly its operators, the highlight following hand-made changes, the at-least-one-operator check, locking during a run, and a run using only the chosen operators |
 | `copy-buttons.test.js` | Copy putting exactly the selected export (all four formats) on the clipboard and its label resetting, Copy share link copying the link it shows, and both buttons' fallbacks when the clipboard fails |
+| `chart-theme.test.js` | In both themes: the canvases' background is `--chart-bg`, points and lines are drawn in their caption keys' colours, and every chart colour is readable on the background; the toggle and a device switch (in Auto) redraw the charts in the new colours |
 | `charts.test.js` | What the canvases draw, read back pixel by pixel: the fit chart's markers and curve, predicted against actual with several inputs, the progress chart's grid, dashed target line (following the setting), best and median lines, and the replay marker |
 | `theme.test.js` | Auto following the device (also when it switches), the Auto → Light → Dark cycle, the saved choice surviving a reload and overriding the device, the `<head>` script applying it before the app starts, and the toggle on the About page |
 
@@ -177,7 +178,7 @@ Prefer finding elements by role, label or visible text, as these tests do, over 
 
 **Chart tests** read pixels back from the canvases (`colorNear`, `countColor`, `greenNear`) at positions computed with the same `shared.js` functions the page draws with; they never compare screenshots, so fonts and anti-aliasing do not matter. The canvases are transparent, so a pixel that a line only partly covers keeps the line's colour at a lower alpha. Lines that cross blend, such as the target line on a grid line, which is why it is checked as "clearly green" rather than an exact colour. `storeSession(page, state)` writes a checkpoint into IndexedDB so that a reload restores a run with a fixed progress history, which makes the progress chart deterministic. The canvas layout (sizes and margins) is repeated in the test, so update both when it changes.
 
-Known issue: the charts are drawn on a white background in both themes with the fixed `CHART_COLORS`, so they do not match the theme-aware colour keys in their captions.
+**Chart colours follow the theme.** A canvas is not styled by CSS, so `app.js` reads the colours when it draws: `chartColors()` resolves each role in `CHART_COLOR_TOKENS` to a CSS custom property on `<html>`. Lines and points use the same `--key-*` tokens as the caption keys, so they always match; the background, grid, frame and labels use `--chart-bg`, `--chart-grid`, `--chart-frame` and `--chart-text`. Each theme block in `style.css` defines all of them. `applyTheme()` sends an `equvolve:themechange` event on `window`, and the Home page redraws both charts when it arrives, so a toggle or a device switch recolours them at once. To change a chart colour, change its token in all three theme blocks; `chart-theme.test.js` checks that every line colour keeps a 3:1 contrast (labels 4.5:1) with the chart background.
 
 ## Benchmark
 
