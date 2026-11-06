@@ -47,11 +47,23 @@ const appUrl = () => server.url;
 //   with page.answerDialogs = 'accept'
 // options.readme: a Playwright route handler for the README request
 //   (default: serve the local README.md)
+// options.clipboard: 'grant' to allow reading and writing the clipboard,
+//   'fail' to make every clipboard write fail (as when it is blocked)
 //
 // Every dialog's message is recorded in page.dialogs. Uncaught page
 // errors fail the test.
 async function openApp(t, options = {}) {
-  const context = await browser.newContext({ colorScheme: options.colorScheme || 'dark' });
+  const context = await browser.newContext({
+    colorScheme: options.colorScheme || 'dark',
+    permissions: options.clipboard === 'grant' ? ['clipboard-read', 'clipboard-write'] : []
+  });
+
+  if (options.clipboard === 'fail') {
+    await context.addInitScript(() => {
+      navigator.clipboard.writeText = () => Promise.reject(new DOMException('Write blocked', 'NotAllowedError'));
+    });
+  }
+
   await context.route(README_URL, options.readme || serveLocalReadme);
 
   const page = await context.newPage();
