@@ -320,7 +320,7 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 | `docs/`         | [Developer guide](docs/DEVELOPMENT.md): architecture, worker messages, data formats       |
 | `.github/workflows/test.yml` | CI: runs `npm test` and `npm run test:ui` on Node 22                            |
 
-The About page renders this README, fetched live from the `main` branch.
+The About page renders this README, fetched live from the `main` branch. Its in-page links (such as [Example results](#example-results)) scroll to their section there, as they do on GitHub.
 
 ---
 

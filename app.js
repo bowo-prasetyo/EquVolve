@@ -1518,6 +1518,24 @@ function layoutTree(root) {
   };
 }
 
+const README_URL = 'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/README.md';
+
+// The anchor GitHub gives a heading, so the README's in-page links
+// (such as #example-results) work here as they do on GitHub:
+// lowercase, punctuation removed, spaces as hyphens, and -1, -2, ...
+// added to repeated headings.
+function headingSlug(text, used) {
+  const base = text.trim().toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc}\- ]/gu, '')
+    .replace(/ /g, '-');
+
+  let slug = base;
+  for (let k = 1; used.has(slug); k++) slug = `${base}-${k}`;
+
+  used.add(slug);
+  return slug;
+}
+
 const About = {
 
   data() {
@@ -1528,20 +1546,53 @@ const About = {
 
   async mounted() {
     try {
-      const response = await fetch(
-        'https://raw.githubusercontent.com/bowo-prasetyo/equvolve/main/README.md'
-      );
+      const response = await fetch(README_URL);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
       this.content = marked.parse(await response.text());
+
+      await this.$nextTick();
+      this.addHeadingIds();
     } catch (e) {
       this.content = '<p>Failed to load README.md</p>';
       console.error(e);
     }
   },
 
+  methods: {
+    addHeadingIds() {
+      const used = new Set();
+
+      for (const h of this.$refs.content.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+        h.id = headingSlug(h.textContent, used);
+      }
+    },
+
+    // The app's routes live in the URL hash (#/about), so a plain
+    // "#section" link would be read as a route and show a blank page.
+    // Scroll to the section instead.
+    followInPageLink(event) {
+      const link = event.target.closest('a');
+      const href = link && link.getAttribute('href');
+
+      if (!href || !href.startsWith('#') || href.startsWith('#/')) return;
+
+      event.preventDefault();
+
+      const target = document.getElementById(decodeURIComponent(href.slice(1)));
+
+      if (target) {
+        target.scrollIntoView();
+      }
+    }
+  },
+
   template: `
     <div class="container about">
-      <div v-html="content"></div>
+      <div ref="content" v-html="content" @click="followInPageLink"></div>
     </div>
   `
 };
