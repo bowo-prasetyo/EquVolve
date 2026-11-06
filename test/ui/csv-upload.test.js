@@ -157,3 +157,81 @@ test('a share link carries the uploaded dataset to a new visitor', async (t) => 
   await loadedSummary(visitor).filter({ hasText: 'Loaded line.csv: 4 rows' }).waitFor();
   assert.ok(await visitor.getByLabel('Upload dataset').isChecked());
 });
+
+// =========================================================
+// SKIPPED ROWS, PREVIEW AND SAMPLE DATA
+// =========================================================
+
+test('the rows a file loses are reported with their line numbers and why', async (t) => {
+  const page = await openApp(t);
+
+  await uploadCsv(page, 'a,b,y\n1,2,3\n4,,6\n7,8,9\nx,1,2\n\n5,5\n10,11,12\n');
+
+  await loadedSummary(page).filter({ hasText: 'Loaded data.csv: 3 rows' }).waitFor();
+  assert.equal(
+    await page.locator('.skipped-rows').innerText(),
+    'Skipped 3 rows: line 3 (an empty cell); line 5 (text instead of a number); line 7 (missing cells).'
+  );
+
+  // a clean file reports nothing
+  await uploadCsv(page, 'a,b,y\n1,2,3\n4,5,6\n', 'clean.csv');
+  await loadedSummary(page).filter({ hasText: 'Loaded clean.csv' }).waitFor();
+  assert.equal(await page.locator('.skipped-rows').count(), 0);
+});
+
+test('a preview shows the first rows as they will be fitted, with the target marked', async (t) => {
+  const page = await openApp(t);
+
+  const rows = Array.from({ length: 8 }, (_, i) => `${i},${10 * i},${i + 100}`);
+  await uploadCsv(page, `Height (cm),width,price\n${rows.join('\n')}\n`);
+  await loadedSummary(page).waitFor();
+
+  const preview = page.locator('table.preview');
+  assert.equal(await preview.locator('caption').innerText(), 'The first 5 of 8 rows, as EquVolve reads them');
+  assert.deepEqual(await preview.locator('th').allInnerTexts(), ['Height_cm', 'width', 'price (target)']);
+  assert.deepEqual(await preview.locator('tbody tr').first().locator('td').allInnerTexts(), ['0', '0', '100']);
+  assert.equal(await preview.locator('tbody tr').count(), 5);
+
+  // it follows the chosen target column
+  await page.locator('#target-column').selectOption({ label: 'width' });
+  assert.deepEqual(await preview.locator('th').allInnerTexts(), ['Height_cm', 'price', 'width (target)']);
+  assert.deepEqual(await preview.locator('tbody tr').nth(1).locator('td').allInnerTexts(), ['1', '101', '10']);
+});
+
+test('input columns past the limit are named as ignored', async (t) => {
+  const page = await openApp(t);
+
+  const headers = [...'abcdefghijkl'].join(',') + ',y';
+  const row = (k) => Array.from({ length: 13 }, (_, j) => k * (j + 1)).join(',');
+  await uploadCsv(page, `${headers}\n${row(1)}\n${row(2)}\n${row(3)}\n`);
+  await loadedSummary(page).waitFor();
+
+  assert.equal(
+    await page.locator('.ignored-columns').innerText(),
+    'Only the first 10 input columns are used; ignored: k, l.'
+  );
+});
+
+test('the sample data can be tried at once or downloaded', async (t) => {
+  const page = await openApp(t);
+
+  await page.getByLabel('Upload dataset').check();
+  await page.getByRole('button', { name: 'Use sample data', exact: true }).click();
+
+  assert.equal(
+    await loadedSummary(page).innerText(),
+    'Loaded sample-boxes.csv: 24 rows · inputs: height, width, depth · target: price'
+  );
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Download sample CSV', exact: true }).click()
+  ]);
+
+  assert.equal(download.suggestedFilename(), 'sample-boxes.csv');
+
+  const fs = require('fs');
+  const text = fs.readFileSync(await download.path(), 'utf8');
+  assert.match(text, /^height,width,depth,price\n/);
+  assert.equal(text.trim().split('\n').length, 25);
+});

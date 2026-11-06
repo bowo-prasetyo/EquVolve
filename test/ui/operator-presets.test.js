@@ -117,7 +117,6 @@ test('a run only uses the operators of the chosen preset', async (t) => {
   assert.doesNotMatch(polynomial, /\b(sin|cos|tan|exp|log|sqrt|cbrt)\w*\(/, polynomial);
 
   // with sin available the same target is found exactly: y = sin(x)
-  page.answerDialogs = 'accept';
   await button(page, 'Clear Results').click();
   await startButton(page).waitFor();
   await button(page, 'Trigonometric').click();

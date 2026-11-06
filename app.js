@@ -104,6 +104,23 @@ const THEME_CHANGE_EVENT = 'equvolve:themechange';
 const FIT_MAX_POINTS = 60;
 const PREDICTED_MAX_POINTS = 400;
 
+// "5 minutes ago", "yesterday", ... for a past time in milliseconds.
+function timeAgo(timestamp, now = Date.now()) {
+  const seconds = Math.round((timestamp - now) / 1000);
+  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+
+  for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
+    if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
+  }
+
+  return 'just now';
+}
+
+// How many rows of an uploaded dataset the preview table shows.
+const PREVIEW_ROWS = 5;
+
+const SAMPLE_FILE_NAME = 'sample-boxes.csv';
+
 const OP_LABELS = { '*': '×', '/': '÷', '-': '−' };
 
 const Home = {
@@ -119,6 +136,21 @@ const Home = {
         Evolve a formula that explains your data, live and entirely in your browser.
       </p>
     </header>
+
+    <!-- A saved run from an earlier visit: offered here rather than in a
+         dialog, so the page is usable straight away. -->
+    <section v-if="savedRun" class="restore-banner" aria-labelledby="restore-title">
+      <p>
+        <b id="restore-title">Continue where you left off?</b>
+        Your last run is saved in this browser: {{ savedRunSummary }}.
+        It comes back paused, with its results.
+      </p>
+      <div class="controls">
+        <button class="primary" @click="restoreSavedRun">Restore run</button>
+        <button @click="savedRun = null">Not now</button>
+      </div>
+      <p class="hint">Not now keeps it saved for your next visit; starting a new run replaces it.</p>
+    </section>
 
     <!-- ===================== 1. TARGET ===================== -->
     <section class="panel">
@@ -182,6 +214,12 @@ const Home = {
           <span v-if="fieldErrors.dataset" id="error-dataset" class="field-error">{{ fieldErrors.dataset }}</span>
         </div>
 
+        <div class="field-row sample-row">
+          <span class="hint">No file to hand, or unsure of the format?</span>
+          <button class="small" @click="useSampleCsv" :disabled="isRunning">Use sample data</button>
+          <button class="small" @click="downloadSampleCsv">Download sample CSV</button>
+        </div>
+
         <p class="hint">
           Columns of numbers, usually with a header row. One column is the target to predict (the last one by default);
           every other column becomes an input (up to {{ maxVariables }}).
@@ -195,11 +233,40 @@ const Home = {
           </select>
         </div>
 
-        <div v-if="uploadedFileName" class="code">
-          Loaded {{ uploadedFileName }}: {{ uploadedData.length }} rows
-          <template v-if="isMultiVariable">
-            · inputs: {{ variables.join(', ') }}<template v-if="targetName"> · target: {{ targetName }}</template>
-          </template>
+        <div v-if="uploadedFileName" class="loaded-summary">
+          <p class="loaded-line">
+            Loaded {{ uploadedFileName }}: {{ uploadedData.length }} rows
+            <template v-if="isMultiVariable">
+              · inputs: {{ variables.join(', ') }}<template v-if="targetName"> · target: {{ targetName }}</template>
+            </template>
+          </p>
+
+          <p v-if="csvSkippedText" class="hint skipped-rows">{{ csvSkippedText }}</p>
+
+          <p v-if="ignoredColumns.length" class="hint ignored-columns">
+            Only the first {{ maxVariables }} input columns are used; ignored: {{ ignoredColumns.join(', ') }}.
+          </p>
+
+          <div v-if="previewRows.length" class="preview-wrap">
+            <table class="preview">
+              <caption>
+                {{ previewRows.length < uploadedData.length ? 'The first ' + previewRows.length + ' of ' + uploadedData.length + ' rows' : 'All ' + uploadedData.length + ' rows' }},
+                as EquVolve reads them
+              </caption>
+              <thead>
+                <tr>
+                  <th v-for="c in previewColumns" :key="c.name" scope="col" :class="{ target: c.target }">
+                    {{ c.name }}<span v-if="c.target" class="hint"> (target)</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, i) in previewRows" :key="i">
+                  <td v-for="(v, j) in row" :key="j" :class="{ target: previewColumns[j].target }">{{ v }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </template>
     </section>
@@ -396,10 +463,17 @@ const Home = {
 
       <div class="stat-row">
         <div class="stat"><span>Generation</span><b>{{ generation }}</b></div>
-        <div class="stat"><span>Best R²</span><b>{{ formatR2(bestR2) }}</b></div>
+        <div class="stat">
+          <span>Best R²</span><b>{{ formatR2(bestR2) }}</b>
+          <small v-if="bestR2 != null" class="fit-quality" :class="fitClass(bestR2)">{{ fitQuality(bestR2) }}</small>
+        </div>
         <div class="stat"><span>Program size</span><b>{{ bestSize ?? '–' }}</b></div>
         <div class="stat"><span>Speed</span><b>{{ speedText }}</b></div>
       </div>
+
+      <p class="hint">
+        R² measures the fit: 1 is perfect, 0 is no better than always guessing the average, and below 0 is worse than that.
+      </p>
 
       <template v-if="best">
         <h3>{{ replayEntry ? 'Replay: best program at generation ' + replayEntry.g : 'Best program' }}</h3>
@@ -422,7 +496,7 @@ const Home = {
           >
 
           <span class="hint">
-            {{ replayEntry ? 'generation ' + replayEntry.g + ' · R² ' + formatR2(replayEntry.r2) : 'latest' }}
+            {{ replayEntry ? 'generation ' + replayEntry.g + ' · R² ' + formatR2(replayEntry.r2) + ' (' + fitQuality(replayEntry.r2).toLowerCase() + ')' : 'latest' }}
             · {{ timeline.length }} improvements
           </span>
 
@@ -493,24 +567,32 @@ const Home = {
             class="edge"
           />
 
-          <g v-for="(n, i) in treeLayout.nodes" :key="'n' + i">
-            <circle :cx="n.x" :cy="n.y" r="18" :fill="n.color" />
-            <text :x="n.x" :y="n.y + 4" text-anchor="middle" :font-size="n.label.length > 4 ? 9 : 12">
-              {{ n.label }}
-            </text>
+          <g v-for="(n, i) in treeLayout.nodes" :key="'n' + i" :class="'node ' + n.kind">
+            <title>{{ n.title }}</title>
+            <rect
+              :x="n.x - n.width / 2"
+              :y="n.y - treeLayout.nodeHeight / 2"
+              :width="n.width"
+              :height="treeLayout.nodeHeight"
+              :rx="treeLayout.nodeHeight / 2"
+              :fill="n.color"
+            />
+            <text :x="n.x" :y="n.y + 4" text-anchor="middle" font-size="12">{{ n.label }}</text>
           </g>
         </svg>
 
         <p class="hint">
-          Each circle is labelled with its operator, variable or number: operators are orange, variables green and numbers khaki.
+          Each node is labelled with its operator, variable or number: operators are orange, variables green and numbers khaki.
+          Point at a number to see all its digits.
         </p>
       </template>
 
       <template v-if="history.length">
         <h3>Recent generations</h3>
 
-        <div v-for="item in history" :key="item.generation" class="code history">
-          Generation {{ item.generation }} · R² {{ formatR2(item.r2) }} · {{ item.expression }}
+        <div v-for="item in history" :key="item.generation" class="history">
+          <span class="history-meta">Generation {{ item.generation }} · R² {{ formatR2(item.r2) }}</span>
+          <code>{{ item.expression }}</code>
         </div>
       </template>
     </section>
@@ -528,6 +610,7 @@ const Home = {
       uploadedData: [],
       uploadedFileName: '',
       csvTable: null,
+      csvSkipped: [], // rows parseCsv left out, as { line, reason }
       targetColumn: 0,
       maxVariables: MAX_VARIABLES,
 
@@ -551,6 +634,7 @@ const Home = {
       showValidation: false, // after a failed Start/Resume, re-check as the user edits
       advancedOpen: false,
       undo: null, // { label, state }: the run that Clear Results or New run replaced
+      savedRun: null, // the checkpoint from an earlier visit, offered for restoring
       exportFormat: 'plain',
       copyLabel: 'Copy',
       shareUrl: '',
@@ -637,6 +721,55 @@ const Home = {
 
     isIdle() {
       return this.evolutionState === 'idle';
+    },
+
+    csvSkippedText() {
+      return describeSkippedRows(this.csvSkipped);
+    },
+
+    // Columns past the input limit, which datasetFromTable leaves out.
+    ignoredColumns() {
+      if (!this.csvTable) return [];
+
+      return this.csvTable.headers
+        .filter((_, i) => i !== this.targetColumn)
+        .slice(MAX_VARIABLES);
+    },
+
+    // The training data's columns: the inputs, then the target.
+    previewColumns() {
+      return [
+        ...this.activeVariables.map(name => ({ name, target: false })),
+        { name: this.targetName || 'y', target: true }
+      ];
+    },
+
+    previewRows() {
+      return this.uploadedData.slice(0, PREVIEW_ROWS).map(p => [
+        ...this.activeVariables.map(name => (p.v ? p.v[name] : p.x)),
+        p.y
+      ]);
+    },
+
+    // The saved run in a few words: what it fits, how far it got, when.
+    savedRunSummary() {
+      const run = this.savedRun;
+
+      if (!run) return '';
+
+      const config = run.config || {};
+      const what = config.dataMode === 'dataset' ?
+        (config.uploadedFileName || 'an uploaded dataset') :
+        `y = ${config.targetFormula}`;
+      const parts = [what, `generation ${run.generation || 0}`];
+
+      if (Number.isFinite(run.bestR2)) {
+        parts.push(`R² ${this.formatR2(run.bestR2)} (${fitQuality(run.bestR2).toLowerCase()})`);
+      }
+
+      if (run.timestamp) parts.push(`saved ${timeAgo(run.timestamp)}`);
+
+      return parts.join(' · ');
     },
 
     // How many Advanced settings differ from the defaults, so changes
@@ -792,6 +925,16 @@ const Home = {
 
   methods: {
 
+    fitQuality(r2) {
+      return fitQuality(r2);
+    },
+
+    // A colour class for a fit quality: good, fair or poor.
+    fitClass(r2) {
+      if (!Number.isFinite(r2)) return '';
+      return r2 >= 0.99 ? 'good' : r2 >= 0.9 ? 'fair' : 'poor';
+    },
+
     formatR2(r2) {
       if (r2 == null || !Number.isFinite(r2)) return '–';
       return r2 >= 0.99 ? r2.toFixed(6) : r2.toFixed(4);
@@ -909,10 +1052,18 @@ const Home = {
       request.onsuccess = () => {
         const result = request.result;
 
-        if (result && confirm('Restore your previous run? It comes back paused, where you left it.')) {
-          this.restoreSession(result);
+        // only while nothing else has been started or loaded meanwhile
+        if (result && this.isIdle && !this.best) {
+          this.savedRun = Vue.markRaw(result);
         }
       };
+    },
+
+    restoreSavedRun() {
+      const state = this.savedRun;
+
+      this.savedRun = null;
+      this.restoreSession(state);
     },
 
     applySettings(config) {
@@ -933,6 +1084,9 @@ const Home = {
 
       this.uploadedData = config.dataset ?? [];
       this.uploadedFileName = config.uploadedFileName || 'Restored Dataset';
+      // the restored rows replace any file loaded in this visit
+      this.csvTable = null;
+      this.csvSkipped = [];
 
       this.generation = state.generation || 0;
       // older sessions stored the raw best program as `best`
@@ -1106,6 +1260,7 @@ const Home = {
       }
 
       this.undo = null;
+      this.savedRun = null; // the new run replaces it
       this.launch(config);
     },
 
@@ -1446,6 +1601,7 @@ const Home = {
           this.uploadedData = shared.config.dataset;
           this.uploadedFileName = shared.fileName || 'Shared dataset';
           this.csvTable = null;
+          this.csvSkipped = [];
         }
 
         this.resetResults();
@@ -1488,22 +1644,45 @@ const Home = {
 
       const reader = new FileReader();
 
-      reader.onload = (e) => {
-        const table = parseCsv(e.target.result);
-
-        if (table.headers.length < 2 || !table.rows.length) {
-          this.errorMessages = ['The CSV needs at least two columns of numbers, separated by commas, semicolons or tabs.'];
-          return;
-        }
-
-        this.errorMessages = [];
-        this.uploadedFileName = file.name;
-        this.csvTable = table;
-        this.targetColumn = table.headers.length - 1;
-        this.applyTable();
-      };
-
+      reader.onload = (e) => this.loadCsvText(e.target.result, file.name);
       reader.readAsText(file);
+    },
+
+    loadCsvText(text, fileName) {
+      const table = parseCsv(text);
+
+      if (table.headers.length < 2 || !table.rows.length) {
+        const skipped = describeSkippedRows(table.skipped);
+        this.errorMessages = [
+          'The CSV needs at least two columns of numbers, separated by commas, semicolons or tabs.' +
+          (skipped ? ` ${skipped}` : '')
+        ];
+        return;
+      }
+
+      this.errorMessages = [];
+      this.uploadedFileName = fileName;
+      this.csvTable = table;
+      this.csvSkipped = table.skipped || [];
+      this.targetColumn = table.headers.length - 1;
+      this.applyTable();
+    },
+
+    useSampleCsv() {
+      this.loadCsvText(sampleCsv(), SAMPLE_FILE_NAME);
+    },
+
+    // Save the sample as a file, to see the format or use as a template.
+    downloadSampleCsv() {
+      const url = URL.createObjectURL(new Blob([sampleCsv()], { type: 'text/csv' }));
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = SAMPLE_FILE_NAME;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
 
     // Rebuild the training data from the uploaded table and the chosen
@@ -1828,33 +2007,51 @@ const Home = {
   }
 };
 
-// Tidy tree layout: leaves are spaced evenly left to right, each parent
-// sits above the middle of its children, and the SVG viewBox is sized
-// to fit, so any tree scales to the available width.
+// Tidy tree layout: leaves are placed left to right, each as wide as
+// its label needs, each parent sits above the middle of its children,
+// and the SVG viewBox is sized to fit, so any tree scales to the
+// available width. Nodes are pills that grow with their label, so long
+// numbers and column names are never cut off.
+const TREE_NODE_HEIGHT = 30;
+const TREE_CHAR_WIDTH = 7.2; // about one character at 12px
+const TREE_MIN_NODE_WIDTH = 36;
+const TREE_GAP = 12;
+
+function treeNodeWidth(label) {
+  return Math.max(TREE_MIN_NODE_WIDTH, Math.ceil(label.length * TREE_CHAR_WIDTH + 16));
+}
+
 function layoutTree(root) {
   const nodes = [];
-  const unit = 46;
   const level = 64;
-  const pad = 24;
-  let nextLeaf = 0;
+  const pad = 12;
+  let cursor = pad;
   let maxDepth = 0;
 
   const place = (node, depth, parent) => {
     maxDepth = Math.max(maxDepth, depth);
 
-    const item = { x: 0, y: pad + depth * level, parent, label: '', color: '' };
+    const item = { x: 0, y: pad + TREE_NODE_HEIGHT / 2 + depth * level, parent, label: '', title: '', color: '', kind: '', width: 0 };
     nodes.push(item);
 
     if (typeof node === 'string' || typeof node === 'number') {
-      item.x = pad + nextLeaf * unit;
-      nextLeaf++;
-      item.label = isVariable(node) ? node : formatNumber(node, 4);
-      item.color = isVariable(node) ? 'lightgreen' : 'khaki';
+      const variable = isVariable(node);
+
+      item.kind = variable ? 'variable' : 'number';
+      item.label = variable ? String(node) : formatShortNumber(node);
+      item.title = variable ? `input ${node}` : formatNumber(node, 12);
+      item.color = variable ? 'lightgreen' : 'khaki';
+      item.width = treeNodeWidth(item.label);
+      item.x = cursor + item.width / 2;
+      cursor += item.width + TREE_GAP;
       return item;
     }
 
+    item.kind = 'operator';
     item.label = OP_LABELS[node.op] || node.op;
+    item.title = node.op;
     item.color = 'orange';
+    item.width = treeNodeWidth(item.label);
 
     const kids = node.child !== undefined ?
       [place(node.child, depth + 1, item)] :
@@ -1869,12 +2066,20 @@ function layoutTree(root) {
     place(root, 0, null);
   }
 
-  const width = Math.max(1, nextLeaf - 1) * unit + pad * 2;
-  const height = maxDepth * level + pad * 2;
+  // a wide operator over a narrow child may reach past the leaves
+  const left = Math.min(pad, ...nodes.map(n => n.x - n.width / 2));
+  const right = Math.max(cursor - TREE_GAP, ...nodes.map(n => n.x + n.width / 2));
+  const shift = pad - left;
+
+  for (const n of nodes) n.x += shift;
+
+  const width = Math.max(1, right - left) + pad * 2;
+  const height = maxDepth * level + TREE_NODE_HEIGHT + pad * 2;
 
   return {
     nodes,
     width,
+    nodeHeight: TREE_NODE_HEIGHT,
     viewBox: `0 0 ${width} ${height}`
   };
 }

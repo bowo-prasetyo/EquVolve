@@ -44,7 +44,9 @@ const appUrl = () => server.url;
 //
 // options.colorScheme: 'light' | 'dark' (the device setting to emulate)
 // options.dialogs: 'dismiss' (default) | 'accept', changeable later
-//   with page.answerDialogs = 'accept'
+//   with page.answerDialogs = 'accept'. The app shows no dialogs of its
+//   own any more; this is a guard, so an unexpected one fails a test
+//   that checks page.dialogs rather than hanging it.
 // options.readme: a Playwright route handler for the README request
 //   (default: serve the local README.md)
 // options.viewport: { width, height } (default 1280 × 720)
@@ -213,10 +215,11 @@ async function openAdvanced(page) {
   }
 }
 
-const loadedSummary = (page) => page.locator('.code', { hasText: /^\s*Loaded / });
+const loadedSummary = (page) => page.locator('.loaded-line');
 const button = (page, name) => page.getByRole('button', { name, exact: true });
 const startButton = (page) => button(page, 'Start Evolution');
 const runBar = (page) => page.locator('.run-bar');
+const restoreBanner = (page) => page.getByRole('region', { name: 'Continue where you left off?' });
 const status = (page) => page.getByRole('status');
 const errorBox = (page) => page.getByRole('alert');
 const generation = async (page) =>
@@ -259,6 +262,7 @@ module.exports = {
   button,
   startButton,
   runBar,
+  restoreBanner,
   status,
   errorBox,
   generation,
