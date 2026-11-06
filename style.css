@@ -45,6 +45,22 @@ a {
   margin-bottom: 4px;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  letter-spacing: -0.5px;
+}
+
+.brand-mark {
+  width: 44px;
+  height: 44px;
+}
+
+.brand-accent {
+  color: var(--accent);
+}
+
 .tagline {
   margin-top: 0;
   color: var(--muted);
