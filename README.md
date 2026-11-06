@@ -93,7 +93,7 @@ height,width,depth,price
 
 - Commas, semicolons and tabs all work as separators, and can be mixed. Quotes around a cell are removed, but a quoted cell cannot contain a separator.
 - If the first row is all numbers, it is treated as data, and the columns are called `x1`, `x2`, … and `y`.
-- Only the first 10 input columns are used; any after that are ignored. Cells beyond the header's width are ignored too.
+- Only the first 10 input columns are used; any after that are ignored, and the app names them under the loaded file. Cells beyond the header's width are ignored too.
 - Input names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`. A name that starts with a digit, or clashes with a `Math` name or a JavaScript or Python keyword, gets a `v_` prefix (`sin` becomes `v_sin`). Repeated names get `_2`, `_3`, … added.
 - With several inputs the chart draws up to 400 rows.
 
@@ -145,7 +145,7 @@ The default rates were chosen with the benchmark described under [Example result
 - A run pauses on its own when it reaches the Target R² or Max Generations, and a message says which. To keep going after Max Generations, raise it and press **Resume**.
 - **New run** starts again from scratch with the current settings.
 - **Clear Results** clears the results and the saved run straight away, ready for a new one.
-- After **New run** or **Clear Results**, an **Undo** button brings the previous run back, paused, with the settings it ran with, until you start or resume another run.
+- After **New run** or **Clear Results**, an undo button (**Undo new run** or **Undo**) brings the previous run back, paused, with the settings it ran with, until you start or resume another run.
 - Settings are checked when you press **Start Evolution**, **New run** or **Resume**. Every problem is listed above the buttons and shown next to its setting, and the cursor moves to the first one. The list updates as you fix them; click a problem to go to its setting.
 - **Copy share link** appears whenever a result is shown and no run is going, including after you open a share link.
 
@@ -155,7 +155,7 @@ The default rates were chosen with the benchmark described under [Example result
 
 - **Best program:** the best formula so far. The tabs show it as a plain formula, JavaScript, Python or LaTeX, and **Copy** puts the current tab on the clipboard. With several inputs, the exported function takes them as parameters, for example `(height, width, depth) => …`.
 - **Replay:** after a run (or while paused), **▶ Replay** plays through every improvement, and the slider jumps to any of them. The formula, export, fit chart and tree all follow the replay, and the progress chart marks its generation in blue. **Back to latest** returns to the current best.
-- **Fit chart:** with one input, the data (cyan dots) and the best program (red curve), with axes labelled in the input's and the target's units. With several inputs, each row's predicted value against its actual value; points on the red diagonal are predicted exactly. Both charts fit the width of the screen and stay sharp on high-resolution displays.
+- **Fit chart:** with one input, the data (cyan dots) and the best program (red curve). The axes have round tick values and are titled with the input's and the target's names (`x` and `y`, or the CSV's column names). With several inputs, each row's predicted value against its actual value, on axes titled *actual* and *predicted* (with the target's name); points on the red diagonal are predicted exactly. Both charts fit the width of the screen and stay sharp on high-resolution displays.
 - **Progress chart:** how close the best (red) and the median (grey) program are to a perfect fit in each generation. The scale shows R² 0.9, 0.99, 0.999 … at equal steps, so late, small improvements are as visible as early, large ones. The dashed green line is your Target R².
 - **Expression tree:** the best program as a tree. Each node is labelled with its operator, variable or number; operators are orange, variables green and numbers khaki. Nodes grow to fit their label, and long numbers are shortened (`1.76e-6`): point at one to see all its digits.
 - **Program size:** how many nodes the tree has.
@@ -208,6 +208,7 @@ Runs are random, and some formulas are hard to find. Stopping at Max Generations
 | Upload a CSV dataset with at least 2 valid rows                | Upload a file, or check its rows: rows with empty cells or text are skipped.                  |
 | Select at least one operator                                   | Tick an operator, or press a preset.                                                         |
 | Your formula uses …, which is not ticked under Operators       | Press the **Tick …** button next to it, or a preset that includes it. Without it a run can only approximate the formula. |
+| … is not available as an operator, so a run can only approximate it | The formula uses a maths function that is not one of the 23 operators, such as `abs`. Nothing to fix: the run still works, but finds an approximation built from the ticked operators. |
 | This share link could not be read                              | The link is probably incomplete; copy it again.                                               |
 
 ---
@@ -389,7 +390,7 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 | File            | Purpose                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------- |
 | `index.html`    | Page shell; applies the saved theme before the first paint, and loads pinned versions of Vue, Vue Router and Marked from jsDelivr |
-| `shared.js`     | Code shared by UI and engine: evaluation, formula sampling and checks, simplification, export, share links, config validation |
+| `shared.js`     | Code shared by UI and engine: evaluation, formula sampling and checks (including the operators a formula needs), simplification, export, CSV parsing and the sample data, share links, config validation, R² in words, and the charts' layout and colours |
 | `worker.js`     | The GP engine (runs in a Web Worker)                                                           |
 | `app.js`        | Vue UI: inputs, visualisation, persistence, replay, share links, theme toggle, About page     |
 | `style.css`     | Styles, with light and dark colour tokens                                                     |
