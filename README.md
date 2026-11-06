@@ -264,7 +264,21 @@ To run one file:
 node --test test/shared.test.js
 ```
 
-Tests run on Node 22 on every push and pull request via GitHub Actions (`.github/workflows/test.yml`). The UI (`app.js`) has no automated tests; check UI changes by hand in a browser.
+The UI has browser tests for the CSV upload flow. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
+
+```bash
+npm install
+```
+
+```bash
+npx playwright install chromium
+```
+
+```bash
+npm run test:ui
+```
+
+Both suites run on Node 22 on every push and pull request via GitHub Actions (`.github/workflows/test.yml`). The rest of the UI is not covered yet; check other UI changes by hand in a browser.
 
 ### Benchmark
 
@@ -289,12 +303,12 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 | `worker.js`     | The GP engine (runs in a Web Worker)                                                           |
 | `app.js`        | Vue UI: inputs, visualisation, persistence, replay, share links, theme toggle, About page     |
 | `style.css`     | Styles, with light and dark colour tokens                                                     |
-| `test/`         | Headless Node tests (`node:test`); `helpers.js` loads `worker.js` in a simulated Web Worker   |
+| `test/`         | Headless Node tests (`node:test`); `helpers.js` loads `worker.js` in a simulated Web Worker. `test/ui/` holds the browser tests |
 | `bench/`        | `npm run bench`: how often the engine reaches R² ≥ 0.999 on six targets                       |
 | `assets/`       | Logo: `logo-mark.svg` (the icon), and `logo-on-dark.svg` / `logo-on-light.svg` (icon with the EquVolve wordmark) |
 | `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` | Browser and home-screen icons |
 | `docs/`         | [Developer guide](docs/DEVELOPMENT.md): architecture, worker messages, data formats       |
-| `.github/workflows/test.yml` | CI: runs `npm test` on Node 22                                                  |
+| `.github/workflows/test.yml` | CI: runs `npm test` and `npm run test:ui` on Node 22                            |
 
 The About page renders this README, fetched live from the `main` branch.
 

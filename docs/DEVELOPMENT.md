@@ -136,7 +136,21 @@ npm test
 | `phase3-engine.test.js` | Batching and speed, population cadence, replay timeline, constant optimisation, multi-variable runs |
 | `phase3-shared.test.js` | Multiple variables, CSV parsing and variable names, multi-variable export, validation and share links |
 
-Tests are not run against the UI; check UI changes in a browser.
+### Browser tests
+
+```bash
+npm run test:ui
+```
+
+`test/ui/` tests the page itself in headless Chromium, driven by [Playwright](https://playwright.dev/) (pinned in `devDependencies`) and run with `node:test` like the rest. Install it with `npm install` and `npx playwright install chromium` first. `npm test` does not need it.
+
+- `server.js` serves the repository on a free local port, because workers cannot load from `file://`.
+- Each test opens the app in a new browser context, so no IndexedDB session, and no restore prompt, carries over between tests. Browser dialogs are dismissed, and any uncaught page error fails the test.
+- The page loads its libraries from jsDelivr, so the tests need network access.
+
+`csv-upload.test.js` covers the CSV upload flow: single- and multi-input files, the Target column menu, cleaned header names, skipped rows, headerless files, rejected files, validation without a file, a full run with JavaScript and Python export, and a share link carrying the dataset to a new visitor. The runs use data that linear scaling solves within a few generations, so they finish in seconds and do not depend on luck.
+
+Prefer finding elements by role, label or visible text, as these tests do, over CSS classes, so styling changes do not break them. The rest of the UI is not covered yet; check other UI changes in a browser.
 
 ## Benchmark
 
