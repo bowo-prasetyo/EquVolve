@@ -46,7 +46,10 @@ function loadWorker() {
     },
     pendingTimers: () => timers.filter(Boolean).length,
     updates: () => messages.filter(m => m.type === 'update'),
-    finished: () => messages.filter(m => m.type === 'finished')
+    finished: () => messages.filter(m => m.type === 'finished'),
+    // every message describing a generation (the last one of a run
+    // arrives as 'finished' rather than 'update')
+    results: () => messages.filter(m => m.type === 'update' || m.type === 'finished')
   };
 }
 
@@ -67,6 +70,11 @@ function baseConfig(overrides = {}) {
     treeDepth: 4,
     dataMode: 'formula',
     dataset: [],
+    // one generation per timer tick, population in every update, so
+    // tests can step generation by generation
+    batchMs: 0,
+    delayMs: 0,
+    populationEvery: 1,
     ...overrides
   };
 }

@@ -43,7 +43,7 @@ test('initial population is ramped: varied depths and sizes', () => {
   const w = loadWorker();
   w.send({ type: 'start', config: baseConfig({ treeDepth: 5, maxGenerations: 1 }) });
 
-  const pop = w.updates()[0].population;
+  const pop = w.results()[0].population;
   const depths = new Set(pop.map(shared.treeDepth));
   assert.ok(depths.size >= 3, `only depths ${[...depths]}`);
 });
