@@ -217,6 +217,7 @@ Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVo
 - **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
 - **The replay keeps up to 300 snapshots.** In longer runs, intermediate improvements are thinned out; the first and latest are always kept.
 - **The progress chart keeps up to 1,000 points.** Beyond that, every other point is dropped (the latest is always kept), so very long runs are drawn at a coarser resolution.
+- **The charts do not follow the theme.** They are drawn on a white background in both themes, in fixed colours that differ slightly from the colour keys in their captions.
 ---
 
 ## Example results
@@ -274,7 +275,7 @@ GP_TEST_SEED=42 npm test
 GP_TEST_SEED=random npm test
 ```
 
-The UI has browser tests for CSV upload, Start / Stop / Resume, restoring a saved session, replay, operator presets, the Copy buttons, the About page and the theme toggle. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
+The UI has browser tests for CSV upload, Start / Stop / Resume, restoring a saved session, replay, operator presets, the Copy buttons, the About page, the theme toggle and what the charts draw. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
 
 ```bash
 npm install
@@ -288,7 +289,7 @@ npx playwright install chromium
 npm run test:ui
 ```
 
-Both suites run on Node 22 on every push and pull request via GitHub Actions (`.github/workflows/test.yml`). The browser suite takes about half a minute. What it does not cover yet is listed in the [developer guide](docs/DEVELOPMENT.md#browser-tests); check changes there by hand in a browser.
+Both suites run on Node 22 on every push and pull request via GitHub Actions (`.github/workflows/test.yml`). The browser suite takes under a minute. How the tests are set up is described in the [developer guide](docs/DEVELOPMENT.md#browser-tests).
 
 ### Benchmark
 
