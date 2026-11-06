@@ -13,13 +13,15 @@ useBrowser();
 
 const T = (op, left, right) => ({ op, left, right });
 
-// Canvas layout, as in app.js (both canvases are 600 × 300).
-const W = 600;
-const H = 300;
-const FIT = { padding: 20 };
-const PREDICTED = { pad: 30 };
-const PROGRESS = { left: 84, right: 12, top: 12, bottom: 28 };
 const FIT_MAX_POINTS = 60;
+
+// A chart's size in CSS pixels, which its layout is computed from. The
+// tests run at a pixel density of 1, so it is also its size in canvas
+// pixels, where the pixels are read.
+function chartSize(page, index) {
+  return page.$$eval('canvas', (cs, i) =>
+    [cs[i].width / devicePixelRatio, cs[i].height / devicePixelRatio], index);
+}
 
 const NAMED = { red: [255, 0, 0], green: [0, 128, 0] };
 
@@ -118,21 +120,16 @@ function countColor(page, index, color, tolerance = 40) {
   }, { index, color, tolerance });
 }
 
-// The fit chart's scales for a set of points, as drawFit computes them.
-function fitScales(points) {
-  const x = s.valueRange(points.map(p => p.x));
-  const y = s.valueRange(points.map(p => p.y));
-  return {
-    toX: s.linearScale(x.min, x.max, FIT.padding, W - FIT.padding),
-    toY: s.linearScale(y.min, y.max, H - FIT.padding, FIT.padding)
-  };
+// The fit chart's layout for a set of points, as the page computes it.
+async function fitScales(page, points) {
+  const [W, H] = await chartSize(page, 0);
+  return s.fitGeometry(s.valueRange(points.map(p => p.x)), s.valueRange(points.map(p => p.y)), W, H);
 }
 
-// The progress chart's scales for a run of `generations`.
-function progressScales(generations) {
-  const toX = s.linearScale(1, Math.max(generations, 2), PROGRESS.left, W - PROGRESS.right);
-  const level = s.linearScale(0, s.PROGRESS_MIN_LOG, PROGRESS.top, H - PROGRESS.bottom);
-  return { toX, toY: (r2) => level(s.progressLevel(r2)) };
+// The progress chart's layout for a run of `generations`.
+async function progressScales(page, generations) {
+  const [W, H] = await chartSize(page, 1);
+  return s.progressGeometry(generations, W, H);
 }
 
 // A saved 30-generation run of sin(x), with a known progress history and
@@ -184,7 +181,7 @@ test('the fit chart marks the sampled points of the target formula', async (t) =
   const COLORS = await themeColors(page);
 
   const points = s.generateFormulaSamples('x*x + 2', -5, 5, 101);
-  const { toX, toY } = fitScales(points);
+  const { toX, toY } = await fitScales(page, points);
   const drawn = s.sampleIndices(points.length, FIT_MAX_POINTS);
 
   assert.ok(drawn.length < points.length, 'markers are thinned');
@@ -208,7 +205,7 @@ test('the fit chart draws the best program through the data', async (t) => {
   await waitForStatus(page, 'Target R² reached');
 
   const points = s.generateFormulaSamples('x*x + 2', -5, 5, 101);
-  const { toX, toY } = fitScales(points);
+  const { toX, toY } = await fitScales(page, points);
   const markers = s.sampleIndices(points.length, FIT_MAX_POINTS)
     .map(i => [toX(points[i].x), toY(points[i].y)]);
 
@@ -256,13 +253,10 @@ test('with several inputs the fit chart plots predicted against actual', async (
   await waitForStatus(page, 'Loaded a shared run');
 
   const { min, max } = s.valueRange(dataset.map(p => p.y));
-  const size = Math.min(W, H) - PREDICTED.pad * 2;
-  const left = (W - size) / 2;
-  const toX = s.linearScale(min, max, left, left + size);
-  const toY = s.linearScale(min, max, H - PREDICTED.pad, H - PREDICTED.pad - size);
+  const [W, H] = await chartSize(page, 0);
+  const { toX, toY } = s.predictedGeometry({ min, max }, W, H);
 
-  // each row at (actual, predicted); points on the box's edge are
-  // partly clipped, so look within 2 px of the centre
+  // each row at (actual, predicted)
   for (const p of dataset) {
     const predicted = s.evaluateTree(model, p.v);
     assert.ok(
@@ -277,6 +271,66 @@ test('with several inputs the fit chart plots predicted against actual', async (
   }
 });
 
+test('the fit chart has a frame and grid lines at round values', async (t) => {
+  const page = await openApp(t);
+  const COLORS = await themeColors(page);
+  const points = s.generateFormulaSamples('x*x + 2', -5, 5, 101);
+  const { plot, toX, toY, xTicks, yTicks } = await fitScales(page, points);
+
+  assert.ok(xTicks.includes(0) && xTicks.length >= 3, `x ticks ${xTicks}`);
+  assert.ok(yTicks.length >= 3, `y ticks ${yTicks}`);
+
+  // the grid line at x = 0, near the top where the parabola is far away
+  assert.ok(
+    await colorNear(page, 0, Math.round(toX(0)), plot.top + 6, COLORS.grid, { radius: 0, tolerance: 20 }),
+    'vertical grid line at x = 0'
+  );
+
+  // a horizontal grid line at a y tick, left of the curve
+  const y = Math.round(toY(yTicks[1]));
+  assert.ok(await colorNear(page, 0, plot.left + 3, y, COLORS.grid, { radius: 0, tolerance: 20 }), `grid at y = ${yTicks[1]}`);
+
+  // the frame around the plot
+  assert.ok(await colorNear(page, 0, plot.left, (plot.top + plot.bottom) / 2, COLORS.frame, { radius: 0, tolerance: 20 }), 'frame');
+});
+
+test('the charts are drawn at the screen\'s pixel density and fit a phone', async (t) => {
+  const page = await openApp(t, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const COLORS = await themeColors(page);
+
+  const sizes = await page.$$eval('canvas', (cs) => cs.map(c => [c.width, c.height, c.clientWidth, c.clientHeight]));
+
+  for (const [width, height, cssWidth, cssHeight] of sizes) {
+    assert.equal(width, 2 * cssWidth, 'twice as many canvas pixels across');
+    assert.equal(height, 2 * cssHeight, 'and down');
+    assert.ok(cssHeight >= 240, `tall enough to read: ${cssHeight}`);
+  }
+
+  // the first data marker, in canvas pixels
+  const points = s.generateFormulaSamples('x*x + 2', -5, 5, 101);
+  const { toX, toY } = await fitScales(page, points);
+  assert.ok(await colorNear(page, 0, 2 * toX(-5), 2 * toY(27), COLORS.data, { radius: 1, tolerance: 10 }));
+});
+
+test('the charts are redrawn at their new size when the window changes', async (t) => {
+  const page = await openApp(t);
+  const before = await chartSize(page, 0);
+
+  await page.setViewportSize({ width: 700, height: 720 });
+  await page.waitForFunction((w) => document.querySelector('canvas').width !== w, before[0]);
+
+  const [W, H] = await chartSize(page, 0);
+  const width = await page.$eval('canvas', c => c.clientWidth);
+  assert.equal(W, width, 'drawn at the width it is shown at');
+  assert.deepEqual([W, H], [s.chartSize(width).width, s.chartSize(width).height]);
+
+  // and the data are drawn in the new layout
+  const COLORS = await themeColors(page);
+  const points = s.generateFormulaSamples('x*x + 2', -5, 5, 101);
+  const { toX, toY } = await fitScales(page, points);
+  assert.ok(await colorNear(page, 0, toX(-5), toY(27), COLORS.data, { radius: 0, tolerance: 10 }));
+});
+
 // =========================================================
 // PROGRESS CHART
 // =========================================================
@@ -284,8 +338,8 @@ test('with several inputs the fit chart plots predicted against actual', async (
 test('the progress chart draws its grid and the dashed target line', async (t) => {
   const page = await openApp(t);
   const COLORS = await themeColors(page);
-  const { toY } = progressScales(1);
-  const x = PROGRESS.left + 40;
+  const { toY, plot } = await progressScales(page, 1);
+  const x = plot.left + 40;
 
   // one grid line per power of ten
   for (const { r2, label } of s.progressGrid()) {
@@ -295,10 +349,10 @@ test('the progress chart draws its grid and the dashed target line', async (t) =
 
   // the target R² 0.999: green dashes 6 px long with 4 px gaps
   const y = toY(0.999);
-  assert.ok(await greenNear(page, 1, PROGRESS.left + 3, y), 'dash');
-  assert.ok(!(await greenNear(page, 1, PROGRESS.left + 8, y)), 'gap');
-  assert.ok(await greenNear(page, 1, PROGRESS.left + 13, y), 'next dash');
-  assert.ok(!(await greenNear(page, 1, PROGRESS.left + 3, toY(0.99), 1)), 'only at the target');
+  assert.ok(await greenNear(page, 1, plot.left + 3, y), 'dash');
+  assert.ok(!(await greenNear(page, 1, plot.left + 8, y)), 'gap');
+  assert.ok(await greenNear(page, 1, plot.left + 13, y), 'next dash');
+  assert.ok(!(await greenNear(page, 1, plot.left + 3, toY(0.99), 1)), 'only at the target');
 
   // no run yet: no best or median line
   assert.equal(await countColor(page, 1, COLORS.model), 0);
@@ -307,8 +361,8 @@ test('the progress chart draws its grid and the dashed target line', async (t) =
 test('the target line follows the Target R² setting', async (t) => {
   const page = await openApp(t);
   const COLORS = await themeColors(page);
-  const { toY } = progressScales(1);
-  const x = PROGRESS.left + 3;
+  const { toY, plot } = await progressScales(page, 1);
+  const x = plot.left + 3;
 
   for (const r2 of [0.99, 0.995, 0.9]) {
     await setSettings(page, { 'Target R²': r2 });
@@ -324,7 +378,7 @@ test('the target line follows the Target R² setting', async (t) => {
 test('the progress chart draws the best and median of every generation', async (t) => {
   const page = await openSavedRun(t);
   const COLORS = await themeColors(page);
-  const { toX, toY } = progressScales(30);
+  const { toX, toY } = await progressScales(page, 30);
 
   for (const g of [5, 15, 25]) {
     const [, best, median] = SERIES[g - 1];
@@ -343,13 +397,13 @@ test('the progress chart draws the best and median of every generation', async (
 test('the replay position is marked on the progress chart', async (t) => {
   const page = await openSavedRun(t);
   const COLORS = await themeColors(page);
-  const { toX } = progressScales(30);
+  const { toX, plot } = await progressScales(page, 30);
 
   // the second improvement is at generation 12
   await page.getByRole('slider', { name: 'Replay position' }).fill('1');
 
   const x = toX(12);
-  for (const y of [PROGRESS.top + 5, (PROGRESS.top + H - PROGRESS.bottom) / 2 + 20, H - PROGRESS.bottom - 5]) {
+  for (const y of [plot.top + 5, (plot.top + plot.bottom) / 2 + 20, plot.bottom - 5]) {
     assert.ok(await colorNear(page, 1, x, y, COLORS.replay, { radius: 1 }), `marker at y = ${y}`);
   }
 

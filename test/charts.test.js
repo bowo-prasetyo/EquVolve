@@ -142,3 +142,58 @@ test('every chart token is defined in each theme of style.css', () => {
     }
   }
 });
+
+test('niceTicks gives round steps of 1, 2 or 5 inside the range', () => {
+  assert.deepEqual(s.niceTicks(-5.4, 5.4, 8), [-4, -2, 0, 2, 4]);
+  assert.deepEqual(s.niceTicks(0.6, 27.4, 6), [5, 10, 15, 20, 25]);
+  assert.deepEqual(s.niceTicks(-0.003, 0.002, 5), [-0.003, -0.002, -0.001, 0, 0.001, 0.002]);
+  assert.deepEqual(s.niceTicks(0, 1e6, 4), [0, 500000, 1000000]);
+
+  // no floating-point noise
+  for (const v of s.niceTicks(0.1, 0.7, 6)) assert.equal(v, Number(v.toFixed(10)));
+
+  // nothing for an empty or broken range
+  assert.deepEqual(s.niceTicks(1, 1), []);
+  assert.deepEqual(s.niceTicks(NaN, 1), []);
+});
+
+test('formatTick keeps labels short', () => {
+  assert.deepEqual([0, -2.5, 0.3, 1000, 123456, 0.0001234].map(s.formatTick),
+    ['0', '-2.5', '0.3', '1000', '1.2e5', '1.2e-4']);
+});
+
+test('chartSize keeps charts readable on narrow screens', () => {
+  assert.deepEqual(s.chartSize(600), { width: 600, height: 300 });
+  assert.deepEqual(s.chartSize(318), { width: 318, height: 240 });
+  assert.deepEqual(s.chartSize(1200), { width: 1200, height: 340 });
+  assert.deepEqual(s.chartSize(0), { width: 600, height: 300 });
+});
+
+test('fitGeometry keeps the data inside the plot, away from the frame', () => {
+  const g = s.fitGeometry({ min: -5, max: 5 }, { min: 2, max: 27 }, 600, 300);
+
+  assert.ok(g.toX(-5) > g.plot.left && g.toX(5) < g.plot.right);
+  assert.ok(g.toY(27) > g.plot.top && g.toY(2) < g.plot.bottom);
+  assert.ok(g.toY(27) < g.toY(2), 'larger values are higher up');
+
+  // room for the tick labels and axis titles
+  assert.ok(g.plot.left >= 50 && 300 - g.plot.bottom >= 36);
+  assert.ok(g.xTicks.includes(0));
+});
+
+test('predictedGeometry draws a square plot with the same scale on both axes', () => {
+  const g = s.predictedGeometry({ min: 0, max: 10 }, 600, 300);
+
+  close(g.plot.right - g.plot.left, g.plot.bottom - g.plot.top);
+  close(g.toX(7) - g.toX(2), g.toY(2) - g.toY(7));
+});
+
+test('progressGeometry spans the generations and the R² levels', () => {
+  const g = s.progressGeometry(30, 600, 300);
+
+  close(g.toX(1), g.plot.left);
+  close(g.toX(30), g.plot.right);
+  close(g.toY(0), g.plot.top);
+  close(g.toY(1), g.plot.bottom);
+  assert.equal(s.progressGeometry(1, 600, 300).maxG, 2);
+});

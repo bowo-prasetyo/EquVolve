@@ -26,7 +26,7 @@ It is built for **learning and exploring** how GP works, and for light practical
 - **Adjustable search:** population, generations, target fit, the evolution rates, tree depths, and 23 operators with presets.
 - **Light and dark themes:** the whole page, charts included, follows your device's setting by default; the button in the top bar switches between Auto, Light and Dark, and the choice is remembered in this browser.
 - **Stop, resume and restore:** stop a run, change settings and carry on. Your run is saved in the browser, so it survives closing the tab.
-- **Checks before running:** invalid formulas, ranges or settings are reported before a run starts.
+- **Checks before running:** invalid formulas, ranges or settings are reported before a run starts, all at once and next to the setting to fix. If your formula uses an operator that is not ticked (such as `/` in `x*x + 2/x`), the app says so and ticks it for you in one click.
 
 ---
 
@@ -34,7 +34,7 @@ It is built for **learning and exploring** how GP works, and for light practical
 
 1. Open the [live demo](https://bowo-prasetyo.github.io/equvolve/#/).
 2. Keep the default formula `x*x + 2` and press **Start Evolution**. It is found in the first generation.
-3. Now one that takes a little longer: set the formula to `x*x + 2/x`, press the **Rational** operator preset, and press **Start Evolution**. On the progress chart, the red line steps down towards the dashed green target line, usually within 100 generations.
+3. Now one that takes a little longer: set the formula to `x*x + 2/x`. The app points out that it uses `/`, which is not ticked: press **Tick /** (or the **Rational** operator preset), then **Start Evolution**. On the progress chart, the red line steps down towards the dashed green target line, usually within 100 generations.
 4. When it stops, press **▶ Replay** to watch how the formula improved over the run.
 5. Ready for something hard? Try `sin(x) * exp(x/3)` with the **Everything** preset. It usually stops at Max Generations just short of the target; [When a run does not reach the target](#when-a-run-does-not-reach-the-target) explains what to do next.
 
@@ -52,7 +52,7 @@ It is built for **learning and exploring** how GP works, and for light practical
 
 ## How to use
 
-The app has three numbered panels: **1. Data**, **2. Settings** and **3. Results**, with the run buttons between Settings and Results.
+The app has three numbered panels: **1. Data**, **2. Settings** and **3. Results**, with the run buttons between Settings and Results. Until you scroll down to them, the run buttons stay at the bottom of the window, so **Start Evolution** is always one click away, on a phone too.
 
 ### 1. Data: what to fit
 
@@ -99,23 +99,25 @@ height,width,depth,price
 
 ### 2. Settings: how to search
 
-Every setting has a short explanation under it in the app. Most of the time you only need **Operators**, **Max Generations** and **Target R²**; the others are for exploring how GP behaves.
+Every setting has a short explanation under it in the app. Most of the time you only need **Max Generations**, **Target R²**, **Speed** and **Operators**, so only these are shown. The others are for exploring how GP behaves and sit under **Advanced settings**, which says how many of them you have changed from the defaults. It opens by itself when one of them has a problem.
 
 | Setting            | What it does                                                                                     | Default |
 | ------------------ | ------------------------------------------------------------------------------------------------ | ------- |
-| Population Size    | How many programs are tried at once. More can find harder formulas, but each generation is slower (at least 2). | 200     |
 | Max Generations    | The run pauses after this many generations. You can raise it and press **Resume**.               | 500     |
 | Target R²          | The run stops as soon as the best program fits this well (1 = perfect, at most 1).               | 0.999   |
-| Crossover Rate     | How often (0–1) a new program combines parts of two good programs, instead of copying one.        | 0.7     |
-| Mutation Rate      | How often (0–1) a new program then gets a small random change.                                   | 0.1     |
-| Elitism Rate       | The share (0–1) of the best programs kept unchanged for the next generation.                      | 0.05    |
-| Tournament Size    | Parents are chosen by letting this many random programs compete. Larger values favour the best programs more strongly (at least 1). | 5 |
-| Initial Tree Depth | How deeply nested the random programs at the start may be (1–12).                                 | 4       |
-| Max Tree Depth     | How deeply nested any program may become (from Initial Tree Depth to 17). This stops programs growing ever larger without fitting better. | 8 |
-| Linear scaling     | Lets every program be stretched and shifted (`a + b·f(x)`) to fit the data, so evolution only has to find the right shape. Leave it on unless you are studying GP without it. | on |
-| Constant optimisation | Experimental: fine-tune the numbers inside a random 10% of programs each generation. It did not improve results in our benchmark (see [How it works](#constant-optimisation-experimental)). | off |
 | Speed              | **Fast:** as many generations as fit in about 40 ms per screen update. **Slow:** one generation per update, about 6 per second, for watching. | Fast |
 | Operators          | The building blocks programs may use.                                                             | `+ - *` |
+| Population Size *(advanced)* | How many programs are tried at once. More can find harder formulas, but each generation is slower (at least 2). | 200     |
+| Crossover Rate *(advanced)* | How often (0–1) a new program combines parts of two good programs, instead of copying one.        | 0.7     |
+| Mutation Rate *(advanced)* | How often (0–1) a new program then gets a small random change.                                   | 0.1     |
+| Elitism Rate *(advanced)* | The share (0–1) of the best programs kept unchanged for the next generation.                      | 0.05    |
+| Tournament Size *(advanced)* | Parents are chosen by letting this many random programs compete. Larger values favour the best programs more strongly (at least 1). | 5 |
+| Initial Tree Depth *(advanced)* | How deeply nested the random programs at the start may be (1–12).                                 | 4       |
+| Max Tree Depth *(advanced)* | How deeply nested any program may become (from Initial Tree Depth to 17). This stops programs growing ever larger without fitting better. | 8 |
+| Linear scaling *(advanced)* | Lets every program be stretched and shifted (`a + b·f(x)`) to fit the data, so evolution only has to find the right shape. Leave it on unless you are studying GP without it. | on |
+| Constant optimisation *(advanced)* | Experimental: fine-tune the numbers inside a random 10% of programs each generation. It did not improve results in our benchmark (see [How it works](#constant-optimisation-experimental)). | off |
+
+**If the formula needs an operator that is not ticked**, a note above the run buttons names it, with a button that ticks it (for example **Tick /**). A whole power such as `pow(x, 2)` or `x**3` only needs `*`. Maths functions that are not operators, such as `abs`, are pointed out too: a run can only approximate them.
 
 **Operator presets:** Polynomial (`+ - *`), Rational (adds `/`), Trigonometric (adds `sin cos`), Exp / Log (adds `exp log`) and Everything. Pick the preset that matches the shape of your data; fewer, well-chosen operators usually find a formula faster than Everything.
 
@@ -131,22 +133,25 @@ The default rates were chosen with the benchmark described under [Example result
 
 ### Start, stop and resume
 
-| State   | Buttons                                              | Settings                                          |
-| ------- | ---------------------------------------------------- | ------------------------------------------------- |
-| idle    | **Start Evolution**                                  | Editable.                                         |
-| running | **Running…** (disabled), **Stop**                    | Locked.                                           |
-| paused  | **Clear Results**, **Resume**, **Copy share link**   | Editable; **Resume** continues with your changes. |
+| State   | Buttons                                                              | Settings                                          |
+| ------- | -------------------------------------------------------------------- | ------------------------------------------------- |
+| idle    | **Start Evolution**                                                  | Editable.                                         |
+| running | **Running…** (disabled), **Stop**                                    | Locked.                                           |
+| paused  | **Resume**, **New run**, **Copy share link**, and a quieter **Clear Results** | Editable; **Resume** continues with your changes. |
 
+- The highlighted button is the useful next step. After **Stop** it is **Resume**. When resuming would stop again at once, because the run is at Max Generations or already reaches the Target R², it is **New run**, and a note under the buttons says which setting to raise to continue instead. After a perfect fit (R² 1) there is nothing left to improve, so the note suggests **New run**.
 - A run pauses on its own when it reaches the Target R² or Max Generations, and a message says which. To keep going after Max Generations, raise it and press **Resume**.
-- Settings are checked when you press **Start Evolution** or **Resume**; any problems are listed above the buttons.
-- **Clear Results** asks first, then clears the results and the saved run, ready for a new one.
+- **New run** starts again from scratch with the current settings.
+- **Clear Results** clears the results and the saved run straight away, ready for a new one.
+- After **New run** or **Clear Results**, an **Undo** button brings the previous run back, paused, with the settings it ran with, until you start or resume another run.
+- Settings are checked when you press **Start Evolution**, **New run** or **Resume**. Every problem is listed above the buttons and shown next to its setting, and the cursor moves to the first one. The list updates as you fix them; click a problem to go to its setting.
 - **Copy share link** appears whenever a result is shown and no run is going, including after you open a share link.
 
 ### 3. Results: reading them
 
 - **Best program:** the best formula so far. The tabs show it as a plain formula, JavaScript, Python or LaTeX, and **Copy** puts the current tab on the clipboard. With several inputs, the exported function takes them as parameters, for example `(height, width, depth) => …`.
 - **Replay:** after a run (or while paused), **▶ Replay** plays through every improvement, and the slider jumps to any of them. The formula, export, fit chart and tree all follow the replay, and the progress chart marks its generation in blue. **Back to latest** returns to the current best.
-- **Fit chart:** with one input, the data (cyan dots) and the best program (red curve). With several inputs, each row's predicted value against its actual value; points on the red diagonal are predicted exactly.
+- **Fit chart:** with one input, the data (cyan dots) and the best program (red curve), with axes labelled in the input's and the target's units. With several inputs, each row's predicted value against its actual value; points on the red diagonal are predicted exactly. Both charts fit the width of the screen and stay sharp on high-resolution displays.
 - **Progress chart:** how close the best (red) and the median (grey) program are to a perfect fit in each generation. The scale shows R² 0.9, 0.99, 0.999 … at equal steps, so late, small improvements are as visible as early, large ones. The dashed green line is your Target R².
 - **Expression tree:** the best program as a tree. Each circle is labelled with its operator, variable or number; operators are orange, variables green and numbers khaki.
 - **Program size:** how many circles the tree has.
@@ -183,7 +188,7 @@ Runs are random, and some formulas are hard to find. Stopping at Max Generations
 
 1. **Raise Max Generations and press Resume.** The run continues where it stopped. Hard targets can take 1,000 generations or more.
 2. **Choose operators that match the shape of the data:** Trigonometric for waves, Exp / Log for growth, decay or bell curves, Rational for formulas with division. A few fitting operators usually beat Everything.
-3. **Start again** (**Clear Results**, then **Start Evolution**). Every run is different, and a new one may find the formula quickly.
+3. **Start again** with **New run** (**Undo** brings the old run back if the new one does worse). Every run is different, and a new one may find the formula quickly.
 4. **Increase Population Size**, for example to 500. Each generation is slower, but the search tries more at once.
 5. **Accept a slightly lower Target R²**, for example 0.99, if a close fit is enough.
 
@@ -198,6 +203,7 @@ Runs are random, and some formulas are hard to find. Stopping at Max Generations
 | The CSV needs at least two columns of numbers                  | Check that the file has at least two columns of numbers, separated by commas, semicolons or tabs. |
 | Upload a CSV dataset with at least 2 valid rows                | Upload a file, or check its rows: rows with empty cells or text are skipped.                  |
 | Select at least one operator                                   | Tick an operator, or press a preset.                                                         |
+| Your formula uses …, which is not ticked under Operators       | Press the **Tick …** button next to it, or a preset that includes it. Without it a run can only approximate the formula. |
 | This share link could not be read                              | The link is probably incomplete; copy it again.                                               |
 
 ---
@@ -278,7 +284,7 @@ Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVo
 - `sessions` holds a single checkpoint of the latest run, under the key `latest`: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, the recent generations, the progress chart and the replay timeline (up to 300 snapshots). It is checked on every update from the worker and written when the best fitness has improved or at least 10 generations have passed since the last write. It is also written on Stop, when a run finishes, and if the page is closed during a run. The population saved on Stop or finish is exact; between those, it may be up to 10 generations older than the rest of the checkpoint.
 - `bestPrograms` keeps a log of each new best program (time, fitness, R², generation and tree). It is not shown in the UI yet.
 
-**Clear Results** empties both stores. The theme choice is stored separately, in `localStorage` under `equvolve-theme`. Everything stays in your browser; clearing site data deletes it.
+**Clear Results** empties both stores (**Undo** writes the checkpoint back). The theme choice is stored separately, in `localStorage` under `equvolve-theme`. Everything stays in your browser; clearing site data deletes it.
 
 ### Known limitations
 
@@ -401,6 +407,7 @@ The About page renders this README, fetched live from the `main` branch. Its in-
 - Phase 1, restore trust: engine bug fixes, input validation, tests and CI, accurate documentation.
 - Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
 - Phase 3: multi-variable regression, animated replay, batched generations for speed, and experimental constant optimisation (off by default, with the benchmark that justifies it).
+- Usability: the main button follows the next useful step (with **New run** and an **Undo** in place of a confirmation dialog), a hint and one-click fix for operators the formula needs, the advanced settings tucked away, run buttons that stay in view, every problem shown at once next to its setting, and charts with axes that stay sharp and readable on any screen.
 
 **Next**
 

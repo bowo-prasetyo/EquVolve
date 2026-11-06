@@ -72,10 +72,10 @@ The page needs every `progress` and `timeline` entry, because one `update` can c
 
 ## Config
 
-`buildConfig()` in `app.js` produces the config, `validateConfig()` in `shared.js` lists problems with it as user-facing strings, and `normalizeConfig()` fills in settings that older checkpoints and share links lack (for example `maxTreeDepth`, `linearScaling`, and `targetR2` from the old `minError`). When you add a setting, add it to all of these places:
+`buildConfig()` in `app.js` produces the config, `validateConfigFields()` in `shared.js` lists every problem with it as `{ field, message }` (`validateConfig()` gives the messages alone), and `normalizeConfig()` fills in settings that older checkpoints and share links lack (for example `maxTreeDepth`, `linearScaling`, and `targetR2` from the old `minError`). When you add a setting, add it to all of these places:
 
-1. `DEFAULTS` and `buildConfig()` in `app.js` (plus a control, often a `SETTING_FIELDS` entry);
-2. `validateConfig()` if it has limits, and `normalizeConfig()` with a default, so old sessions still restore;
+1. `DEFAULTS` and `buildConfig()` in `app.js` (plus a control, often a `SETTING_FIELDS` entry; mark it `advanced: true` unless most runs need it);
+2. `validateConfigFields()` if it has limits (with the setting's key as `field`, so the page marks and focuses its control; see `FIELD_TARGETS` and `FIELD_ORDER` in `app.js`), and `normalizeConfig()` with a default, so old sessions still restore;
 3. `sanitizeShare()` in `shared.js` if share links should carry it (unknown fields are dropped);
 4. `applyConfig()` in `worker.js`;
 5. the settings table in the README.
@@ -136,12 +136,12 @@ npm test
 | File | Covers |
 | --- | --- |
 | `engine.test.js` | Run lifecycle: target reached, max generations, stop/resume, restore, formula and dataset training points |
-| `shared.test.js` | Target formula syntax and round-tripping, non-finite samples, config validation, legacy `minError` |
+| `shared.test.js` | Target formula syntax and round-tripping, non-finite samples, config validation (every problem with its field), the operators a formula needs (`formulaOperators`), legacy `minError` |
 | `phase2-engine.test.js` | Depth limit, well-formed crossover and mutation, ramped initialisation, linear scaling, reported model and R² |
 | `phase2-shared.test.js` | Simplifier, printing, JavaScript/Python/LaTeX export, formula safety, share links, `normalizeConfig` |
 | `phase3-engine.test.js` | Batching and speed, population cadence, replay timeline, constant optimisation, multi-variable runs |
 | `phase3-shared.test.js` | Multiple variables, CSV parsing and variable names, multi-variable export, validation and share links |
-| `charts.test.js` | Chart geometry: value ranges, linear scales (including upside-down y axes), point thinning, the progress chart's clamped log scale and its grid labels; the chart colour tokens, their fallbacks, and every token being defined in each theme of `style.css` |
+| `charts.test.js` | Chart geometry: canvas sizes, round axis ticks and their labels, the fit, predicted-against-actual and progress layouts, value ranges, linear scales (including upside-down y axes), point thinning, the progress chart's clamped log scale and its grid labels; the chart colour tokens, their fallbacks, and every token being defined in each theme of `style.css` |
 
 ### Browser tests
 
@@ -153,7 +153,8 @@ npm run test:ui
 
 - `server.js` serves the repository on a free local port, because workers cannot load from `file://`.
 - `helpers.js` holds the shared setup: `useBrowser()` starts the server and Chromium for a test file, and `openApp(t, options)` opens the app in a new browser context, so no IndexedDB session, restore prompt or theme choice carries over between tests. Any uncaught page error fails the test.
-- Dialogs (the restore prompt, Clear Results' confirmation) are dismissed unless a test sets `openApp(t, { dialogs: 'accept' })` or `page.answerDialogs = 'accept'`. Every dialog's message is recorded in `page.dialogs`.
+- `openApp(t, { viewport, deviceScaleFactor })` sets the window size and pixel density (1280 × 720 at 1 by default), for phone and high-density tests. `setSettings(page, { label: value })` fills settings by their labels, opening **Advanced settings** first when the setting is in there.
+- Dialogs (the restore prompt) are dismissed unless a test sets `openApp(t, { dialogs: 'accept' })` or `page.answerDialogs = 'accept'`. Every dialog's message is recorded in `page.dialogs`.
 - `openTab(page, url)` opens another tab in the same context, and `reload(page)` reloads, both sharing IndexedDB and `localStorage`, to test what survives closing the page. `storedSession(page)` reads the saved checkpoint without creating or upgrading the database.
 - The About page's README request is answered with this checkout's `README.md`, so the tests check the README being changed and do not depend on what is merged. Pass `openApp(t, { readme: handler })` with a Playwright route handler to simulate a failure. Because every in-page link must point at a heading, renaming a README heading without updating its links fails `about.test.js`.
 - Clipboard access is off by default. `openApp(t, { clipboard: 'grant' })` allows it, so a test can read what was copied with `navigator.clipboard.readText()`. `{ clipboard: 'fail' }` makes every write fail, to test the fallbacks; denying permission alone does not reliably make writes fail in headless Chromium.
@@ -162,21 +163,22 @@ npm run test:ui
 | File | Covers |
 | --- | --- |
 | `csv-upload.test.js` | Single- and multi-input files, the Target column menu, cleaned header names, skipped rows, headerless and rejected files, validation without a file, a full run with JavaScript and Python export, and a share link carrying the dataset |
-| `run-controls.test.js` | Start, Stop and Resume (settings locked while running, the engine really stopped, Resume continuing rather than restarting), Max Generations and target R² endings, validation on Resume, and Clear Results with its confirmation |
-| `restore-session.test.js` | Restoring a finished or stopped run (settings, results, dataset and file name) and resuming it, declining the restore, Clear Results deleting the session, and share links not offering a restore |
+| `run-controls.test.js` | Start, Stop and Resume (settings locked while running, the engine really stopped, Resume continuing rather than restarting), Max Generations and target R² endings, validation on Resume, the highlighted button following the next useful step, Resume explaining what to raise, New run, and Clear Results with Undo |
+| `validation.test.js` | Every problem listed at once in page order, marked on its field (`aria-invalid`) and the first one focused, Advanced settings opening for their problems, problems clearing as they are fixed, the hint and **Tick** button for operators the formula needs, and the run bar keeping Start in view on desktop and phones |
+| `restore-session.test.js` | Restoring a finished or stopped run (settings, results, dataset and file name) and resuming it, declining the restore, Clear Results deleting the session and Undo saving it again, and share links not offering a restore |
 | `replay.test.js` | Stepping through improvements with the slider (formula, export and tree follow), Back to latest, playing to the end, pausing, and the replay hiding during a run |
 | `about.test.js` | The README rendering (logo and tables included), GitHub-style heading anchors, every in-page link pointing at a heading, links scrolling instead of changing the route, and the message when the README cannot be loaded |
 | `operator-presets.test.js` | A checkbox for each of the 23 operators, each preset ticking exactly its operators, the highlight following hand-made changes, the at-least-one-operator check, locking during a run, and a run using only the chosen operators |
 | `copy-buttons.test.js` | Copy putting exactly the selected export (all four formats) on the clipboard and its label resetting, Copy share link copying the link it shows, and both buttons' fallbacks when the clipboard fails |
 | `chart-theme.test.js` | In both themes: the canvases' background is `--chart-bg`, points and lines are drawn in their caption keys' colours, and every chart colour is readable on the background; the toggle and a device switch (in Auto) redraw the charts in the new colours |
-| `charts.test.js` | What the canvases draw, read back pixel by pixel: the fit chart's markers and curve, predicted against actual with several inputs, the progress chart's grid, dashed target line (following the setting), best and median lines, and the replay marker |
+| `charts.test.js` | What the canvases draw, read back pixel by pixel: the fit chart's markers, curve, frame and grid lines, the canvases' pixel density on a phone and redrawing when the window is resized, predicted against actual with several inputs, the progress chart's grid, dashed target line (following the setting), best and median lines, and the replay marker |
 | `theme.test.js` | Auto following the device (also when it switches), the Auto → Light → Dark cycle, the saved choice surviving a reload and overriding the device, the `<head>` script applying it before the app starts, and the toggle on the About page |
 
 Write tests that cannot pass by luck. Runs that must finish use data that linear scaling solves in a few generations. Runs that must not finish use Target R² 1 with a target the operators cannot fit exactly, such as `sin(x)` with `+ - *`. To prove that a resumed run continues, `recordGenerations(page)` records every value the Generation counter shows. Use Slow speed when the generations in question would otherwise arrive in a single Fast batch.
 
 Prefer finding elements by role, label or visible text, as these tests do, over CSS classes, so styling changes do not break them. Note that an `aria-label` replaces a button's visible text as its name (the replay button is "Play replay", not "▶ Replay").
 
-**Chart tests** read pixels back from the canvases (`colorNear`, `countColor`, `greenNear`) at positions computed with the same `shared.js` functions the page draws with; they never compare screenshots, so fonts and anti-aliasing do not matter. The canvases are transparent, so a pixel that a line only partly covers keeps the line's colour at a lower alpha. Lines that cross blend, such as the target line on a grid line, which is why it is checked as "clearly green" rather than an exact colour. `storeSession(page, state)` writes a checkpoint into IndexedDB so that a reload restores a run with a fixed progress history, which makes the progress chart deterministic. The canvas layout (sizes and margins) is repeated in the test, so update both when it changes.
+**Chart tests** read pixels back from the canvases (`colorNear`, `countColor`, `greenNear`) at positions computed with the same `shared.js` functions the page draws with; they never compare screenshots, so fonts and anti-aliasing do not matter. The canvases are transparent, so a pixel that a line only partly covers keeps the line's colour at a lower alpha. Lines that cross blend, such as the target line on a grid line, which is why it is checked as "clearly green" rather than an exact colour. `storeSession(page, state)` writes a checkpoint into IndexedDB so that a reload restores a run with a fixed progress history, which makes the progress chart deterministic. The charts are drawn in CSS pixels at the size the page gives them (`chartSize()`), at the screen's pixel density, and their layout comes from `fitGeometry()`, `predictedGeometry()` and `progressGeometry()` in `shared.js`; the tests read each canvas's size and use the same functions, so a layout change needs no change to the tests. They run at a pixel density of 1, so CSS and canvas pixels coincide, except in the test that checks density 2.
 
 **Chart colours follow the theme.** A canvas is not styled by CSS, so `app.js` reads the colours when it draws: `chartColors()` resolves each role in `CHART_COLOR_TOKENS` to a CSS custom property on `<html>`. Lines and points use the same `--key-*` tokens as the caption keys, so they always match; the background, grid, frame and labels use `--chart-bg`, `--chart-grid`, `--chart-frame` and `--chart-text`. Each theme block in `style.css` defines all of them. `applyTheme()` sends an `equvolve:themechange` event on `window`, and the Home page redraws both charts when it arrives, so a toggle or a device switch recolours them at once. To change a chart colour, change its token in all three theme blocks; `chart-theme.test.js` checks that every line colour keeps a 3:1 contrast (labels 4.5:1) with the chart background.
 
@@ -187,7 +189,7 @@ The README's sections up to **How it works** are the user guide, and the About p
 - **Define terms once, early.** **Key ideas** explains program, population, generation, R² and best program. Use those words, not synonyms (individual, model, expression), and use the same words as the app's labels, hints and messages.
 - **Steps first, detail folded.** Reference detail (limits, edge cases, precision) goes in a `<details>` block under the step it belongs to. Leave a blank line after `<summary>` and before `</details>`, or the Markdown inside is not rendered.
 - **Quick start must succeed.** Check any example there with real runs at the default settings (the test harness in `test/helpers.js` with `loadWorker({ seed: null })` is enough); a newcomer's first run should not end in "Stopped at Max Generations".
-- **Keep the Messages table in step** with the messages in `validateConfig()` (`shared.js`) and `app.js`.
+- **Keep the Messages table in step** with the messages in `validateConfigFields()` (`shared.js`) and `app.js`.
 - **Links:** `about.test.js` fails if an in-page link has no matching heading, so renaming a heading means updating its links.
 
 ## Benchmark
