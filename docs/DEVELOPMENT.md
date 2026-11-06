@@ -25,6 +25,8 @@ index.html ──loads──▶ i18n.js ──▶ shared.js ──▶ app.js (Vu
 
 Routing uses hash history (`#/`, `#/about`), so the site works on any static host, including GitHub Pages. Workers cannot load from `file://`, so serve the folder over HTTP (`python3 -m http.server 8000`).
 
+The live demo is GitHub Pages, deployed from `main` on every merge. The empty `.nojekyll` file at the root tells Pages to publish the files as they are, without a Jekyll build: the site has nothing for Jekyll to do, and Jekyll would silently leave out any file or folder whose name starts with `_`.
+
 ## Programs (trees)
 
 A program is a plain JSON tree:
