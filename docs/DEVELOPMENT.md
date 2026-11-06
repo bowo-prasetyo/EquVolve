@@ -127,6 +127,12 @@ npm test
 
 `test/helpers.js` runs the real `worker.js` in a Node `vm` context that provides `importScripts`, `postMessage` and `onmessage`. Timers are manual: `tick(n)` runs `n` timer callbacks. `baseConfig()` sets `batchMs: 0`, `delayMs: 0` and `populationEvery: 1`, so each tick is exactly one generation and every update carries the population. Its default `targetR2` is 2, which can never be reached, so runs last until Max Generations unless a test overrides it.
 
+**Seeded randomness.** `loadWorker()` replaces `Math.random` inside the engine's `vm` context with a seeded generator (mulberry32, seed 1 by default; the host's `Math.random` is untouched). Every engine test therefore replays the same evolution each time, on every machine, and cannot pass or fail by luck. Before this, *multi-variable data: finds y = 2a + 3b² − c* failed in about 1 of 6 runs: across 24 seeds, 4 runs ended just short of R² 0.9999 within 300 generations.
+
+- `GP_TEST_SEED=42 npm test` runs the suite with another seed, and `GP_TEST_SEED=random npm test` unseeded. Use these to check that a test is robust rather than tuned to one seed. A failure under a given seed reproduces exactly with that seed.
+- A change to the engine that consumes random numbers differently (an extra `Math.random()` call, a different order) changes every seeded run. If a search test then fails, check it with a few seeds before concluding the engine got worse.
+- `loadWorker({ seed })` sets the seed for one worker; `seed: null` leaves it unseeded. The benchmark uses `null`, because it measures how often truly random runs succeed.
+
 | File | Covers |
 | --- | --- |
 | `engine.test.js` | Run lifecycle: target reached, max generations, stop/resume, restore, formula and dataset training points |

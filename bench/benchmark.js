@@ -51,7 +51,8 @@ for (const [formula, operators] of only) {
   let example = null;
 
   for (let i = 0; i < RUNS; i++) {
-    const w = loadWorker();
+    // unseeded: the benchmark measures how often truly random runs succeed
+    const w = loadWorker({ seed: null });
     w.send({ type: 'start', config: baseConfig({ ...SETTINGS, targetFormula: formula, operators }) });
     w.tick(GENERATIONS + 5);
 

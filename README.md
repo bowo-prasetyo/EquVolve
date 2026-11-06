@@ -264,6 +264,16 @@ To run one file:
 node --test test/shared.test.js
 ```
 
+The engine tests seed the engine's random numbers, so they give the same result on every run. To run them with another seed, or unseeded:
+
+```bash
+GP_TEST_SEED=42 npm test
+```
+
+```bash
+GP_TEST_SEED=random npm test
+```
+
 The UI has browser tests for CSV upload, Start / Stop / Resume, restoring a saved session, replay and the theme toggle. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
 
 ```bash

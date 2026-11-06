@@ -1,13 +1,54 @@
 // Loads worker.js inside a Node vm context that mimics a Web Worker:
 // importScripts, postMessage and onmessage. Timers are manual so tests
 // step generations deterministically.
+//
+// The engine's Math.random is seeded, so every engine test sees the same
+// "random" run each time and cannot fail by bad luck. Set GP_TEST_SEED
+// to try another seed, or to "random" for unseeded runs:
+//
+//   GP_TEST_SEED=42 npm test
+//   GP_TEST_SEED=random npm test
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 
-function loadWorker() {
+const DEFAULT_SEED = 1;
+
+function defaultSeed() {
+  const env = process.env.GP_TEST_SEED;
+
+  if (env === undefined || env === '') return DEFAULT_SEED;
+  if (env === 'random') return null;
+
+  const seed = Number(env);
+
+  if (!Number.isInteger(seed)) {
+    throw new Error(`GP_TEST_SEED must be an integer or "random", got "${env}"`);
+  }
+
+  return seed;
+}
+
+// mulberry32: a small, fast 32-bit PRNG with a uniform output in [0, 1),
+// installed as the context's own Math.random (the host's is untouched).
+const SEEDED_RANDOM = `
+  (function (seed) {
+    let a = seed >>> 0;
+    Math.random = function random() {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  })
+`;
+
+// options.seed: an integer seeds Math.random (default: GP_TEST_SEED, else
+// 1); null leaves it truly random, as the benchmark needs.
+function loadWorker({ seed = defaultSeed() } = {}) {
   const messages = [];
   const timers = [];
 
@@ -25,6 +66,11 @@ function loadWorker() {
   };
 
   vm.createContext(context);
+
+  if (seed !== null) {
+    vm.runInContext(SEEDED_RANDOM, context)(seed);
+  }
+
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'worker.js'), 'utf8'), context, { filename: 'worker.js' });
 
   return {
