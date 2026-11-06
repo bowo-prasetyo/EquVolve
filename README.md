@@ -264,7 +264,7 @@ To run one file:
 node --test test/shared.test.js
 ```
 
-The UI has browser tests for the CSV upload flow. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
+The UI has browser tests for CSV upload, Start / Stop / Resume, restoring a saved session, replay and the theme toggle. They serve the app locally and drive it in headless Chromium with [Playwright](https://playwright.dev/), the project's only (development) dependency. They need network access, because the page loads Vue, Vue Router and Marked from jsDelivr:
 
 ```bash
 npm install
@@ -278,7 +278,7 @@ npx playwright install chromium
 npm run test:ui
 ```
 
-Both suites run on Node 22 on every push and pull request via GitHub Actions (`.github/workflows/test.yml`). The rest of the UI is not covered yet; check other UI changes by hand in a browser.
+Both suites run on Node 22 on every push and pull request via GitHub Actions (`.github/workflows/test.yml`). The browser suite takes about half a minute. What it does not cover yet is listed in the [developer guide](docs/DEVELOPMENT.md#browser-tests); check changes there by hand in a browser.
 
 ### Benchmark
 

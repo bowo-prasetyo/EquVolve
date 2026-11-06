@@ -7,57 +7,11 @@
 // tests need network access.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { chromium } = require('playwright');
-const { startServer } = require('./server');
+const {
+  useBrowser, openApp, uploadCsv, loadedSummary, startButton, status, errorBox
+} = require('./helpers');
 
-let server;
-let browser;
-
-test.before(async () => {
-  server = await startServer();
-  browser = await chromium.launch();
-});
-
-test.after(async () => {
-  await browser?.close();
-  await server?.close();
-});
-
-// A fresh browser context per test, so no IndexedDB session (and no
-// restore prompt) leaks from one test into the next. Uncaught page
-// errors fail the test.
-async function openApp(t, url = server.url) {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  const errors = [];
-
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('dialog', (d) => d.dismiss());
-
-  t.after(async () => {
-    await context.close();
-    assert.deepEqual(errors, [], 'uncaught errors on the page');
-  });
-
-  await page.goto(url);
-  await page.locator('.page-header').waitFor();
-
-  return page;
-}
-
-async function uploadCsv(page, text, name = 'data.csv') {
-  await page.getByLabel('Upload dataset').check();
-  await page.locator('#csv').setInputFiles({
-    name,
-    mimeType: 'text/csv',
-    buffer: Buffer.from(text)
-  });
-}
-
-const loadedSummary = (page) => page.locator('.code', { hasText: /^\s*Loaded / });
-const startButton = (page) => page.getByRole('button', { name: 'Start Evolution' });
-const status = (page) => page.getByRole('status');
-const errorBox = (page) => page.getByRole('alert');
+useBrowser();
 
 test('a two-column CSV loads as x and evolves a fitting formula', async (t) => {
   const page = await openApp(t);
@@ -197,7 +151,7 @@ test('a share link carries the uploaded dataset to a new visitor', async (t) => 
 
   assert.match(url, /#\/\?run=[zj]/);
 
-  const visitor = await openApp(t, url);
+  const visitor = await openApp(t, { url });
 
   await status(visitor).filter({ hasText: 'Loaded a shared run' }).waitFor();
   await loadedSummary(visitor).filter({ hasText: 'Loaded line.csv: 4 rows' }).waitFor();
