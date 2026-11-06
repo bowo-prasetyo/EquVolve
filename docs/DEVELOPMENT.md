@@ -145,12 +145,24 @@ npm run test:ui
 `test/ui/` tests the page itself in headless Chromium, driven by [Playwright](https://playwright.dev/) (pinned in `devDependencies`) and run with `node:test` like the rest. Install it with `npm install` and `npx playwright install chromium` first. `npm test` does not need it.
 
 - `server.js` serves the repository on a free local port, because workers cannot load from `file://`.
-- Each test opens the app in a new browser context, so no IndexedDB session, and no restore prompt, carries over between tests. Browser dialogs are dismissed, and any uncaught page error fails the test.
+- `helpers.js` holds the shared setup: `useBrowser()` starts the server and Chromium for a test file, and `openApp(t, options)` opens the app in a new browser context, so no IndexedDB session, restore prompt or theme choice carries over between tests. Any uncaught page error fails the test.
+- Dialogs (the restore prompt, Clear Results' confirmation) are dismissed unless a test sets `openApp(t, { dialogs: 'accept' })` or `page.answerDialogs = 'accept'`. Every dialog's message is recorded in `page.dialogs`.
+- `openTab(page, url)` opens another tab in the same context, and `reload(page)` reloads, both sharing IndexedDB and `localStorage`, to test what survives closing the page. `storedSession(page)` reads the saved checkpoint without creating or upgrading the database.
 - The page loads its libraries from jsDelivr, so the tests need network access.
 
-`csv-upload.test.js` covers the CSV upload flow: single- and multi-input files, the Target column menu, cleaned header names, skipped rows, headerless files, rejected files, validation without a file, a full run with JavaScript and Python export, and a share link carrying the dataset to a new visitor. The runs use data that linear scaling solves within a few generations, so they finish in seconds and do not depend on luck.
+| File | Covers |
+| --- | --- |
+| `csv-upload.test.js` | Single- and multi-input files, the Target column menu, cleaned header names, skipped rows, headerless and rejected files, validation without a file, a full run with JavaScript and Python export, and a share link carrying the dataset |
+| `run-controls.test.js` | Start, Stop and Resume (settings locked while running, the engine really stopped, Resume continuing rather than restarting), Max Generations and target R² endings, validation on Resume, and Clear Results with its confirmation |
+| `restore-session.test.js` | Restoring a finished or stopped run (settings, results, dataset and file name) and resuming it, declining the restore, Clear Results deleting the session, and share links not offering a restore |
+| `replay.test.js` | Stepping through improvements with the slider (formula, export and tree follow), Back to latest, playing to the end, pausing, and the replay hiding during a run |
+| `theme.test.js` | Auto following the device (also when it switches), the Auto → Light → Dark cycle, the saved choice surviving a reload and overriding the device, the `<head>` script applying it before the app starts, and the toggle on the About page |
 
-Prefer finding elements by role, label or visible text, as these tests do, over CSS classes, so styling changes do not break them. The rest of the UI is not covered yet; check other UI changes in a browser.
+Write tests that cannot pass by luck. Runs that must finish use data that linear scaling solves in a few generations. Runs that must not finish use Target R² 1 with a target the operators cannot fit exactly, such as `sin(x)` with `+ - *`. To prove that a resumed run continues, `recordGenerations(page)` records every value the Generation counter shows. Use Slow speed when the generations in question would otherwise arrive in a single Fast batch.
+
+Prefer finding elements by role, label or visible text, as these tests do, over CSS classes, so styling changes do not break them. Note that an `aria-label` replaces a button's visible text as its name (the replay button is "Play replay", not "▶ Replay").
+
+Not covered yet: what the canvas charts draw, operator presets, the Copy buttons (headless Chromium has no clipboard permission by default) and the About page's content. Check changes there in a browser.
 
 ## Benchmark
 
