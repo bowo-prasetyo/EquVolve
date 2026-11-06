@@ -104,7 +104,7 @@ test('choosing a language drops a ?lang= from the address, so a reload keeps the
   await page.locator('nav a', { hasText: 'Beranda' }).waitFor();
   assert.deepEqual(
     (await languageMenu(page).locator('option').allInnerTexts()).sort(),
-    ['Bahasa Indonesia', 'English'],
+    ['Bahasa Indonesia', 'English', '日本語'],
     'test languages are not offered to visitors'
   );
 });
@@ -139,4 +139,36 @@ test('without a README in the chosen language the English one is shown', async (
 
   await page.getByRole('link', { name: 'Tentang', exact: true }).click();
   await page.locator('.about h2', { hasText: 'What it does' }).waitFor();
+});
+
+test('a browser set to Japanese gets the interface in Japanese, with Japanese punctuation', async (t) => {
+  const page = await openApp(t, { locale: 'ja-JP' });
+
+  assert.equal(await page.evaluate(() => document.documentElement.lang), 'ja');
+  await button(page, '進化を開始').waitFor();
+  assert.equal(await page.locator('h2').first().innerText(), '1. データ');
+  assert.equal(await languageMenu(page).inputValue(), 'ja');
+
+  // a list in a sentence uses the Japanese comma: sin、exp
+  await page.locator('#formula').fill('sin(x) * exp(x)');
+  const note = page.locator('.run-message.note').first();
+  await note.waitFor();
+  assert.match(await note.innerText(), /^数式で sin、exp を使っていますが/);
+
+  // a run, and sentences shown together are joined without a space
+  await page.locator('#formula').fill('x*x + 2');
+  await button(page, '進化を開始').click();
+  await status(page).filter({ hasText: '目標 R² に達しました' }).waitFor({ timeout: 30000 });
+  await button(page, '共有リンクをコピー').click();
+  await status(page).filter({ hasText: '共有リンク' }).waitFor();
+  assert.match(await status(page).innerText(), /。(リンクには|データセットが)/, 'no space between sentences');
+
+  // the About page in Japanese
+  await page.getByRole('link', { name: '概要', exact: true }).click();
+  await page.locator('.about h2', { hasText: 'できること' }).waitFor();
+  const broken = await page.$$eval('.about a[href^="#"]', (links) => links
+    .map(a => a.getAttribute('href'))
+    .filter(href => !href.startsWith('#/'))
+    .filter(href => !document.getElementById(decodeURIComponent(href.slice(1)))));
+  assert.deepEqual(broken, [], 'in-page links reach the Japanese headings');
 });
