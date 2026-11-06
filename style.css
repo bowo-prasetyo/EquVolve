@@ -31,6 +31,11 @@
   --key-grey: #bbb;
   --key-green: #4c4;
   --key-blue: #6b9bff;
+  /* the charts: drawn in the --key-* colours on this background */
+  --chart-bg: #1a1a1a;
+  --chart-grid: #333;
+  --chart-frame: #555;
+  --chart-text: #aaa;
   color-scheme: dark;
 }
 
@@ -64,6 +69,10 @@
     --key-grey: #666;
     --key-green: #2a8a2a;
     --key-blue: #2f5fd0;
+    --chart-bg: #fff;
+    --chart-grid: #ddd;
+    --chart-frame: #ccc;
+    --chart-text: #555;
     color-scheme: light;
   }
 }
@@ -97,6 +106,10 @@
   --key-grey: #666;
   --key-green: #2a8a2a;
   --key-blue: #2f5fd0;
+  --chart-bg: #fff;
+  --chart-grid: #ddd;
+  --chart-frame: #ccc;
+  --chart-text: #555;
   color-scheme: light;
 }
 
@@ -410,7 +423,7 @@ canvas {
   width: 100%;
   height: auto;
   border: 1px solid var(--canvas-border);
-  background: #fff;
+  background: var(--chart-bg);
 }
 
 svg.tree {

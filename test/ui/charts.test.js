@@ -30,9 +30,18 @@ function rgb(color) {
   return [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
 }
 
-const COLORS = Object.fromEntries(
-  Object.entries(s.CHART_COLORS).map(([k, v]) => [k, rgb(v)])
-);
+// The chart colours of the page's current theme, as [r, g, b], read from
+// the same CSS tokens the page draws with.
+async function themeColors(page) {
+  const tokens = await page.evaluate((names) => {
+    const style = getComputedStyle(document.documentElement);
+    return Object.fromEntries(names.map(n => [n, style.getPropertyValue(n).trim()]));
+  }, Object.values(s.CHART_COLOR_TOKENS));
+
+  return Object.fromEntries(
+    Object.entries(s.chartColors(name => tokens[name])).map(([role, v]) => [role, rgb(v)])
+  );
+}
 
 // Is a pixel within `radius` of (x, y) on canvas `index` (0 = fit,
 // 1 = progress) close to `color`? The canvases are transparent, so a
@@ -172,6 +181,7 @@ async function openSavedRun(t) {
 
 test('the fit chart marks the sampled points of the target formula', async (t) => {
   const page = await openApp(t);
+  const COLORS = await themeColors(page);
 
   const points = s.generateFormulaSamples('x*x + 2', -5, 5, 101);
   const { toX, toY } = fitScales(points);
@@ -193,6 +203,7 @@ test('the fit chart marks the sampled points of the target formula', async (t) =
 
 test('the fit chart draws the best program through the data', async (t) => {
   const page = await openApp(t);
+  const COLORS = await themeColors(page);
   await startButton(page).click();
   await waitForStatus(page, 'Target R² reached');
 
@@ -241,6 +252,7 @@ test('with several inputs the fit chart plots predicted against actual', async (
 
   // a share link is read when the page loads
   const page = await openApp(t, { url: `${appUrl()}#/?run=${code}` });
+  const COLORS = await themeColors(page);
   await waitForStatus(page, 'Loaded a shared run');
 
   const { min, max } = s.valueRange(dataset.map(p => p.y));
@@ -271,6 +283,7 @@ test('with several inputs the fit chart plots predicted against actual', async (
 
 test('the progress chart draws its grid and the dashed target line', async (t) => {
   const page = await openApp(t);
+  const COLORS = await themeColors(page);
   const { toY } = progressScales(1);
   const x = PROGRESS.left + 40;
 
@@ -293,6 +306,7 @@ test('the progress chart draws its grid and the dashed target line', async (t) =
 
 test('the target line follows the Target R² setting', async (t) => {
   const page = await openApp(t);
+  const COLORS = await themeColors(page);
   const { toY } = progressScales(1);
   const x = PROGRESS.left + 3;
 
@@ -309,6 +323,7 @@ test('the target line follows the Target R² setting', async (t) => {
 
 test('the progress chart draws the best and median of every generation', async (t) => {
   const page = await openSavedRun(t);
+  const COLORS = await themeColors(page);
   const { toX, toY } = progressScales(30);
 
   for (const g of [5, 15, 25]) {
@@ -327,6 +342,7 @@ test('the progress chart draws the best and median of every generation', async (
 
 test('the replay position is marked on the progress chart', async (t) => {
   const page = await openSavedRun(t);
+  const COLORS = await themeColors(page);
   const { toX } = progressScales(30);
 
   // the second improvement is at generation 12
