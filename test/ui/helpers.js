@@ -60,9 +60,11 @@ const appUrl = () => server.url;
 // options.deviceScaleFactor: the screen's pixel density (default 1)
 // options.clipboard: 'grant' to allow reading and writing the clipboard,
 //   'fail' to make every clipboard write fail (as when it is blocked)
+// options.storage: 'missing' (no window.indexedDB) or 'failing'
+//   (indexedDB.open throws), as in some private modes or sandboxed frames
 //
-// Every dialog's message is recorded in page.dialogs. Uncaught page
-// errors fail the test.
+// Every dialog's message is recorded in page.dialogs, and every console
+// error in page.consoleErrors. Uncaught page errors fail the test.
 async function openApp(t, options = {}) {
   const context = await browser.newContext({
     colorScheme: options.colorScheme || 'dark',
@@ -71,6 +73,16 @@ async function openApp(t, options = {}) {
     locale: options.locale || 'en-US',
     permissions: options.clipboard === 'grant' ? ['clipboard-read', 'clipboard-write'] : []
   });
+
+  if (options.storage === 'missing') {
+    await context.addInitScript(() => {
+      Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true });
+    });
+  } else if (options.storage === 'failing') {
+    await context.addInitScript(() => {
+      IDBFactory.prototype.open = () => { throw new DOMException('Storage is disabled', 'SecurityError'); };
+    });
+  }
 
   if (options.clipboard === 'fail') {
     await context.addInitScript(() => {
@@ -101,8 +113,10 @@ async function openApp(t, options = {}) {
 
 function watchPage(page, errors) {
   page.dialogs ??= [];
+  page.consoleErrors ??= [];
   page.answerDialogs ??= 'dismiss';
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') page.consoleErrors.push(m.text()); });
   page.on('dialog', (d) => {
     page.dialogs.push(d.message());
     return page.answerDialogs === 'accept' ? d.accept() : d.dismiss();

@@ -969,8 +969,24 @@ const Home = {
 
     initDB(offerRestore = true) {
 
-      // The name predates EquVolve; keep it so sessions saved before the rename still restore.
-      const request = indexedDB.open('gp-db', 2);
+      // Without storage (some private modes, storage turned off, sandboxed
+      // frames) indexedDB is missing or open() throws or fails; EquVolve
+      // then works as normal, it just cannot save runs: this.db stays
+      // null, and every save and restore checks for that.
+      let request;
+
+      try {
+        // The name predates EquVolve; keep it so sessions saved before the rename still restore.
+        request = indexedDB.open('gp-db', 2);
+      } catch (e) {
+        console.warn('EquVolve: saving runs is unavailable in this browser.', e);
+        return;
+      }
+
+      request.onerror = (e) => {
+        e.preventDefault();
+        console.warn('EquVolve: saving runs is unavailable in this browser.', request.error);
+      };
 
       request.onupgradeneeded = (e) => {
         const db = e.target.result;
