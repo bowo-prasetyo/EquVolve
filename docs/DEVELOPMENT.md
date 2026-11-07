@@ -4,6 +4,18 @@ This guide is for people changing EquVolve's code. For what the app does and how
 
 EquVolve is a static site with no build step and no runtime dependencies besides three pinned CDN scripts (Vue, Vue Router, Marked). Everything runs in the browser.
 
+## Libraries
+
+`index.html` loads Vue, Vue Router and Marked from jsDelivr, each pinned to an exact version and with a Subresource Integrity hash, so the browser refuses a file that differs from the published one. To change a version, update its URL and its `integrity` value together, and check the new hash against the npm package itself, not only the CDN:
+
+```bash
+npm pack vue@3.5.13
+tar -xzf vue-3.5.13.tgz package/dist/vue.global.prod.js
+echo "sha384-$(openssl dgst -sha384 -binary package/dist/vue.global.prod.js | openssl base64 -A)"
+```
+
+`test/index-html.test.js` checks that every external script is pinned and has a hash.
+
 ## Architecture
 
 ```
