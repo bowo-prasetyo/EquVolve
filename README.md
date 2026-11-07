@@ -101,6 +101,7 @@ height,width,depth,price
 - Only the first 10 input columns are used; any after that are ignored, and the app names them under the loaded file. A row with more cells than the header is skipped (*too many cells*), as its values do not line up with the columns; a single trailing separator is fine.
 - Input names are cleaned to letters, digits and `_`, so `Height (cm)` becomes `Height_cm`. A name that starts with a digit, or clashes with a `Math` name or a JavaScript or Python keyword, gets a `v_` prefix (`sin` becomes `v_sin`). Repeated names get `_2`, `_3`, … added.
 - With several inputs the chart draws up to 400 rows.
+- Every row is used in every generation, so runs slow down as rows × inputs grow: a few thousand rows run comfortably, while 10,000 rows with 3 inputs run at about 2 generations per second.
 
 </details>
 
@@ -274,7 +275,7 @@ Polishing the best programs' constants makes them win most tournaments, so the p
 
 ### Speed
 
-In **Fast** mode the worker runs generations back to back for about 40 ms, then sends one update covering all of them and pauses for 5 ms. Every generation is still added to the progress chart and replay (subject to the limits under [Known limitations](#known-limitations)). The full population, needed only for checkpoints, is sent every 10 generations, on Stop and on finish. This replaces Phase 2's fixed 50 ms pause per generation, which capped runs at about 20 generations per second. A population of 200 now runs at roughly 60–100 generations per second in a typical browser, depending on the operators. **Slow** mode sends every generation with a 150 ms pause.
+In **Fast** mode the worker runs generations back to back for about 40 ms, then sends one update covering all of them and pauses for 5 ms. Every generation is still added to the progress chart and replay (subject to the limits under [Known limitations](#known-limitations)). The full population, needed only for checkpoints, is sent every 10 generations, on Stop and on finish. Versions before 1.0 paused a fixed 50 ms after every generation, which capped runs at about 20 generations per second. A population of 200 now runs at roughly 60–100 generations per second in a typical browser, depending on the operators. **Slow** mode sends every generation with a 150 ms pause.
 
 ### Simplification
 
@@ -295,11 +296,11 @@ Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVo
 - `sessions` holds a single checkpoint of the latest run, under the key `latest`: settings, dataset, generation, the whole population (trees stored as compact nested arrays), the best program, the recent generations, the progress chart and the replay timeline (up to 300 snapshots). It is checked on every update from the worker and written when the best fitness has improved or at least 10 generations have passed since the last write. It is also written on Stop, when a run finishes, and if the page is closed during a run. The population saved on Stop or finish is exact; between those, it may be up to 10 generations older than the rest of the checkpoint.
 - `bestPrograms` keeps a log of each new best program (time, fitness, R², generation and tree). It is not shown in the UI yet.
 
-**Clear Results** empties both stores (**Undo** writes the checkpoint back). The theme and language choices are stored separately, in `localStorage` under `equvolve-theme` and `equvolve-language`. Everything stays in your browser; clearing site data deletes it.
+**Clear Results** empties both stores (**Undo** writes the checkpoint back). The theme and language choices are stored separately, in `localStorage` under `equvolve-theme` and `equvolve-language`. Everything stays in your browser; clearing site data deletes it. If the browser does not allow storage (some private browsing modes, or with site data turned off), EquVolve works as usual but cannot save runs, so there is nothing to restore later.
 
 ### Known limitations
 
-- **Constants inside non-linear functions** (the `1/3` in `exp(x/3)`) are found by mutation alone, so these targets are solved less reliably than in Phase 1; see [Example results](#example-results). The experimental constant optimisation did not fix this.
+- **Constants inside non-linear functions** (the `1/3` in `exp(x/3)`) are found by mutation alone, so these targets are solved less reliably than by the original engine (the version before the rewrite that led to 1.0); see [Example results](#example-results). The experimental constant optimisation did not fix this.
 - **Formula mode has one variable** (`x`); several variables need a CSV.
 - **The simplifier is algebraic only.** It does not know trigonometric or logarithmic identities, and it does not factor expressions.
 - **The replay keeps up to 300 snapshots.** In longer runs, intermediate improvements are thinned out; the first and latest are always kept.
@@ -310,21 +311,22 @@ Sessions are stored in the browser's IndexedDB (`gp-db`; the name predates EquVo
 
 `npm run bench` measures how often the engine reaches R² ≥ 0.999 within 200 generations, using the default settings (population 200, linear scaling on, constant optimisation off), 101 sample points and x in [-3, 3]. Each target is run 20 times. A full run takes about 15 minutes; see [Benchmark](#benchmark) for shorter runs. GP is stochastic, so your runs will differ, and a difference of a few runs out of 20 is within noise.
 
-| Target              | Operators         | Phase 1 | Phase 2 | This version | Median generations | Example result (this version)                         |
-| ------------------- | ----------------- | ------- | ------- | ------------ | ------------------ | ----------------------------------------------------- |
-| `x*x*x - 2*x + 1`   | `+ - *`           | 6       | 20      | **20**       | 9                  | `pow(x, 3) - 2 * x + 1`                               |
-| `3*x*x + 2`         | `+ - *`           | 17      | 20      | **20**       | 1                  | `3 * pow(x, 2) + 2`                                   |
-| `x*x + 2/x`         | `+ - * /`         | 19      | 20      | **20**       | 14                 | `0.9716 * pow(x, 2) + 2.0113 / x + 0.087772`          |
-| `exp(-x*x/2)`       | `+ - * / exp`     | **19**  | 11      | 13           | 22                 | `0.99343 * exp(-0.54735 * pow(x, 2)) + 0.020478`      |
-| `sin(x) + sin(x*x)` | `+ - * / sin cos` | **15**  | 12      | 12           | 19                 | `sin(x) + sin(pow(x, 2))`                             |
-| `sin(x) * exp(x/3)` | `+ - * / sin exp` | **7**   | 5       | 3            | 12                 | `1.0273 * exp(0.30728 * x) * sin(x) + 0.023183`       |
-| **Total (of 120)**  |                   | 83      | 88      | **88**       |                    |                                                       |
+The *original engine* is the version from before the rewrite that led to 1.0, measured with the same benchmark.
+
+| Target              | Operators         | Original engine | 1.0     | Median generations (1.0) | Example result (1.0)                              |
+| ------------------- | ----------------- | --------------- | ------- | ------------------------ | ------------------------------------------------- |
+| `x*x*x - 2*x + 1`   | `+ - *`           | 6               | **20**  | 9                        | `pow(x, 3) - 2 * x + 1`                           |
+| `3*x*x + 2`         | `+ - *`           | 17              | **20**  | 1                        | `3 * pow(x, 2) + 2`                               |
+| `x*x + 2/x`         | `+ - * /`         | 19              | **20**  | 14                       | `0.9716 * pow(x, 2) + 2.0113 / x + 0.087772`      |
+| `exp(-x*x/2)`       | `+ - * / exp`     | **19**          | 13      | 22                       | `0.99343 * exp(-0.54735 * pow(x, 2)) + 0.020478`  |
+| `sin(x) + sin(x*x)` | `+ - * / sin cos` | **15**          | 12      | 19                       | `sin(x) + sin(pow(x, 2))`                         |
+| `sin(x) * exp(x/3)` | `+ - * / sin exp` | **7**           | 3       | 12                       | `1.0273 * exp(0.30728 * x) * sin(x) + 0.023183`   |
+| **Total (of 120)**  |                   | 83              | **88**  |                          |                                                   |
 
 What this shows:
 
-- **Polynomial and rational targets are solved every time** (60/60, against 42/60 in Phase 1), usually within a handful of generations. Linear scaling and subtree crossover do the work here.
-- **Targets with a constant inside a non-linear function** (the `1/2` in `exp(-x*x/2)`, the `1/3` in `exp(x/3)`) are solved less often than in Phase 1 (28/60, against 41/60). Phase 1 nudged every constant in every offspring, which happened to suit these targets. The experimental [constant optimisation](#constant-optimisation-experimental) did not close this gap.
-- **This version searches exactly like Phase 2** (constant optimisation is off by default), so per generation the results match within noise. It is faster per second: generations are batched instead of paused 50 ms each.
+- **Polynomial and rational targets are solved every time** (60/60, against 42/60 for the original engine), usually within a handful of generations. Linear scaling and subtree crossover do the work here.
+- **Targets with a constant inside a non-linear function** (the `1/2` in `exp(-x*x/2)`, the `1/3` in `exp(x/3)`) are solved less often than by the original engine (28/60, against 41/60). The original engine nudged every constant in every offspring, which happened to suit these targets. The experimental [constant optimisation](#constant-optimisation-experimental) did not close this gap.
 - Even when a run misses the strict target, it usually finds an R² above 0.99. The examples show near misses that have the right shape with slightly wrong constants, such as `exp(0.307x)` for `exp(x/3)`.
 
 ## Running locally
@@ -395,7 +397,7 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 
 | File            | Purpose                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------- |
-| `index.html`    | Page shell; applies the saved theme before the first paint, and loads pinned versions of Vue, Vue Router and Marked from jsDelivr |
+| `index.html`    | Page shell; applies the saved theme before the first paint, and loads pinned versions of Vue, Vue Router and Marked from jsDelivr, checked with integrity hashes |
 | `i18n.js`       | Translation: chooses the interface language, loads its messages and formats them (plurals, lists) |
 | `locales/`      | The interface's text, one ICU JSON file per language (`en.json` is the source; `id.json` Indonesian, `ja.json` Japanese) |
 | `README.id.md`, `README.ja.md` | This README in Indonesian and Japanese, shown on the About page in those languages |
@@ -407,6 +409,7 @@ For how the engine, UI and tests fit together, see the [developer guide](docs/DE
 | `bench/`        | `npm run bench`: how often the engine reaches R² ≥ 0.999 on six targets                       |
 | `assets/`       | Logo: `logo-mark.svg` (the icon), and `logo-on-dark.svg` / `logo-on-light.svg` (icon with the EquVolve wordmark) |
 | `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` | Browser and home-screen icons |
+| `CHANGELOG.md`  | What each release contains |
 | `docs/`         | [Developer guide](docs/DEVELOPMENT.md): architecture, worker messages, data formats; [translation guide](docs/TRANSLATING.md) |
 | `.github/workflows/test.yml` | CI: runs `npm test` and `npm run test:ui` on Node 22                            |
 
@@ -416,15 +419,7 @@ The About page renders this README (or its translation, in the interface's langu
 
 ## Roadmap
 
-**Done**
-
-- Phase 1, restore trust: engine bug fixes, input validation, tests and CI, accurate documentation.
-- Phase 2, a great core loop: subtree crossover and mutation with a depth limit, linear scaling, simplification, progress chart, operator presets, export, share links, and a workflow-ordered layout.
-- Phase 3: multi-variable regression, animated replay, batched generations for speed, and experimental constant optimisation (off by default, with the benchmark that justifies it).
-- Usability, round 2: a banner instead of a dialog to restore a saved run, controls at least 44 px tall on phones (operator chips), tree nodes that fit long numbers and names, R² in words and results in the page's own font, and CSV sample data, a preview and a report of skipped rows.
-- Indonesian and Japanese: the interface and this README in Bahasa Indonesia and 日本語, with a language switcher.
-- Ready for translation: every word of the interface in one message file per language, with proper plurals and lists, numbers written the way each language writes them, a layout that mirrors for right-to-left languages and wraps for longer ones, test languages that find untranslated text and layout problems, and a [translation guide](docs/TRANSLATING.md).
-- Usability: the main button follows the next useful step (with **New run** and an **Undo** in place of a confirmation dialog), a hint and one-click fix for operators the formula needs, the advanced settings tucked away, run buttons that stay in view, every problem shown at once next to its setting, and charts with axes that stay sharp and readable on any screen.
+**Done:** everything in version 1.0. See the [changelog](https://github.com/bowo-prasetyo/equvolve/blob/main/CHANGELOG.md) for what it contains and how it was built.
 
 **Next**
 

@@ -18,10 +18,19 @@
     } catch (e) {}
   </script>
 
-  <!-- Pinned versions: an unpinned major release could break the live demo. -->
-  <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/vue-router@4.5.0/dist/vue-router.global.prod.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.4/marked.min.js"></script>
+  <!-- Pinned versions: an unpinned major release could break the live demo.
+       The integrity hashes (checked against the npm packages) make the
+       browser refuse a file that differs from the published one. When
+       you change a version, update its hash; see docs/DEVELOPMENT.md. -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"
+          integrity="sha384-W/1Fp/LgAYO/oTn9Gs+PbeWuMuq1eQCnUMPCeg8POmMYchhzxctjEqtbiCIxDOON"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vue-router@4.5.0/dist/vue-router.global.prod.js"
+          integrity="sha384-fKhZ7XFlx1XxZ69zuElETNwLMIEVbnq6fLGrT0qMuLVEtFnTTQUeQZETOSFgDJa0"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.4/marked.min.js"
+          integrity="sha384-2NndlFAl0twi2nmu3w9mixodZFiN2fbxlakcYJF86bn1JeS1VB87/XqA7cqymzS+"
+          crossorigin="anonymous"></script>
 
   <link rel="stylesheet" href="style.css">
 </head>

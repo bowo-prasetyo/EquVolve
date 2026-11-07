@@ -1,6 +1,6 @@
 {
   "name": "equvolve",
-  "version": "1.2.0",
+  "version": "1.0.0",
   "private": true,
   "description": "EquVolve: watch equations evolve. A zero-install, in-browser symbolic regression playground built on Genetic Programming.",
   "license": "MIT",
