@@ -101,6 +101,7 @@ height,width,depth,price
 - Hanya 10 kolom masukan pertama yang digunakan; kolom setelahnya diabaikan, dan aplikasi menyebutkannya di bawah berkas yang dimuat. Baris dengan sel lebih banyak daripada judulnya dilewati (*sel terlalu banyak*), karena nilainya tidak sejajar dengan kolom; satu pemisah di akhir baris tidak masalah.
 - Nama masukan dibersihkan menjadi huruf, angka, dan `_`, sehingga `Height (cm)` menjadi `Height_cm`. Nama yang diawali angka, atau bentrok dengan nama `Math` atau kata kunci JavaScript atau Python, diberi awalan `v_` (`sin` menjadi `v_sin`). Nama yang berulang diberi tambahan `_2`, `_3`, ….
 - Dengan beberapa masukan, grafik menggambar hingga 400 baris.
+- Setiap baris dipakai di setiap generasi, sehingga proses melambat seiring bertambahnya jumlah baris × masukan: beberapa ribu baris berjalan dengan nyaman, sedangkan 10.000 baris dengan 3 masukan berjalan sekitar 2 generasi per detik.
 
 </details>
 
@@ -275,7 +276,7 @@ Memoles konstanta program-program terbaik membuatnya memenangi sebagian besar tu
 
 ### Kecepatan
 
-Dalam mode **Cepat**, *worker* menjalankan generasi berturut-turut selama sekitar 40 ms, lalu mengirim satu pembaruan yang mencakup semuanya dan berhenti sejenak 5 ms. Setiap generasi tetap ditambahkan ke grafik kemajuan dan putar ulang (dengan batasan di [Keterbatasan yang diketahui](#keterbatasan-yang-diketahui)). Populasi lengkap, yang hanya diperlukan untuk titik simpan, dikirim setiap 10 generasi, saat Hentikan, dan saat selesai. Ini menggantikan jeda tetap 50 ms per generasi pada Fase 2, yang membatasi proses pada sekitar 20 generasi per detik. Populasi 200 kini berjalan sekitar 60–100 generasi per detik di peramban pada umumnya, tergantung operatornya. Mode **Lambat** mengirim setiap generasi dengan jeda 150 ms.
+Dalam mode **Cepat**, *worker* menjalankan generasi berturut-turut selama sekitar 40 ms, lalu mengirim satu pembaruan yang mencakup semuanya dan berhenti sejenak 5 ms. Setiap generasi tetap ditambahkan ke grafik kemajuan dan putar ulang (dengan batasan di [Keterbatasan yang diketahui](#keterbatasan-yang-diketahui)). Populasi lengkap, yang hanya diperlukan untuk titik simpan, dikirim setiap 10 generasi, saat Hentikan, dan saat selesai. Versi sebelum 1.0 berhenti sejenak 50 ms setelah setiap generasi, yang membatasi proses pada sekitar 20 generasi per detik. Populasi 200 kini berjalan sekitar 60–100 generasi per detik di peramban pada umumnya, tergantung operatornya. Mode **Lambat** mengirim setiap generasi dengan jeda 150 ms.
 
 ### Penyederhanaan
 
@@ -296,11 +297,11 @@ Sesi disimpan di IndexedDB milik peramban (`gp-db`; namanya lebih tua daripada E
 - `sessions` menyimpan satu titik simpan dari proses terbaru, dengan kunci `latest`: pengaturan, dataset, generasi, seluruh populasi (pohon disimpan sebagai larik bersarang yang ringkas), program terbaik, generasi-generasi terakhir, grafik kemajuan, dan garis waktu putar ulang (hingga 300 cuplikan). Titik simpan diperiksa pada setiap pembaruan dari *worker* dan ditulis jika kebugaran terbaik membaik atau sedikitnya 10 generasi telah berlalu sejak penulisan terakhir. Titik simpan juga ditulis saat Hentikan, saat proses selesai, dan jika halaman ditutup selama proses berjalan. Populasi yang disimpan saat Hentikan atau selesai bersifat tepat; di antaranya, populasi bisa tertinggal hingga 10 generasi dari bagian lain titik simpan.
 - `bestPrograms` menyimpan catatan setiap program terbaik yang baru (waktu, kebugaran, R², generasi, dan pohon). Catatan ini belum ditampilkan di antarmuka.
 
-**Hapus Hasil** mengosongkan keduanya (**Urungkan** menulis kembali titik simpannya). Pilihan tema dan bahasa disimpan terpisah, di `localStorage` dengan kunci `equvolve-theme` dan `equvolve-language`. Semuanya tetap di peramban Anda; menghapus data situs akan menghapusnya.
+**Hapus Hasil** mengosongkan keduanya (**Urungkan** menulis kembali titik simpannya). Pilihan tema dan bahasa disimpan terpisah, di `localStorage` dengan kunci `equvolve-theme` dan `equvolve-language`. Semuanya tetap di peramban Anda; menghapus data situs akan menghapusnya. Jika peramban tidak mengizinkan penyimpanan (beberapa mode penjelajahan pribadi, atau jika data situs dimatikan), EquVolve tetap berjalan seperti biasa tetapi tidak dapat menyimpan proses, sehingga tidak ada yang bisa dipulihkan nanti.
 
 ### Keterbatasan yang diketahui
 
-- **Konstanta di dalam fungsi nonlinear** (`1/3` dalam `exp(x/3)`) hanya ditemukan melalui mutasi, sehingga target seperti ini lebih jarang terpecahkan dibandingkan pada Fase 1; lihat [Contoh hasil](#contoh-hasil). Optimasi konstanta eksperimental tidak memperbaikinya.
+- **Konstanta di dalam fungsi nonlinear** (`1/3` dalam `exp(x/3)`) hanya ditemukan melalui mutasi, sehingga target seperti ini lebih jarang terpecahkan dibandingkan oleh mesin asli (versi sebelum penulisan ulang yang menghasilkan 1.0); lihat [Contoh hasil](#contoh-hasil). Optimasi konstanta eksperimental tidak memperbaikinya.
 - **Mode rumus hanya memiliki satu variabel** (`x`); beberapa variabel memerlukan CSV.
 - **Penyederhana hanya bersifat aljabar.** Ia tidak mengenal identitas trigonometri atau logaritma, dan tidak memfaktorkan ekspresi.
 - **Putar ulang menyimpan hingga 300 cuplikan.** Dalam proses yang lebih panjang, perbaikan di tengah-tengah dijarangkan; yang pertama dan yang terbaru selalu disimpan.
@@ -312,21 +313,22 @@ Sesi disimpan di IndexedDB milik peramban (`gp-db`; namanya lebih tua daripada E
 
 `npm run bench` mengukur seberapa sering mesin mencapai R² ≥ 0,999 dalam 200 generasi, dengan pengaturan bawaan (populasi 200, penskalaan linear aktif, optimasi konstanta nonaktif), 101 titik sampel, dan x di [-3, 3]. Setiap target dijalankan 20 kali. Satu putaran lengkap memakan waktu sekitar 15 menit. GP bersifat stokastik, jadi proses Anda akan berbeda, dan selisih beberapa proses dari 20 masih dalam batas derau.
 
-| Target              | Operator          | Fase 1 | Fase 2 | Versi ini | Median generasi | Contoh hasil (versi ini)                               |
-| ------------------- | ----------------- | ------ | ------ | --------- | --------------- | ----------------------------------------------------- |
-| `x*x*x - 2*x + 1`   | `+ - *`           | 6      | 20     | **20**    | 9               | `pow(x, 3) - 2 * x + 1`                               |
-| `3*x*x + 2`         | `+ - *`           | 17     | 20     | **20**    | 1               | `3 * pow(x, 2) + 2`                                   |
-| `x*x + 2/x`         | `+ - * /`         | 19     | 20     | **20**    | 14              | `0.9716 * pow(x, 2) + 2.0113 / x + 0.087772`          |
-| `exp(-x*x/2)`       | `+ - * / exp`     | **19** | 11     | 13        | 22              | `0.99343 * exp(-0.54735 * pow(x, 2)) + 0.020478`      |
-| `sin(x) + sin(x*x)` | `+ - * / sin cos` | **15** | 12     | 12        | 19              | `sin(x) + sin(pow(x, 2))`                             |
-| `sin(x) * exp(x/3)` | `+ - * / sin exp` | **7**  | 5      | 3         | 12              | `1.0273 * exp(0.30728 * x) * sin(x) + 0.023183`       |
-| **Total (dari 120)** |                  | 83     | 88     | **88**    |                 |                                                       |
+*Mesin asli* adalah versi sebelum penulisan ulang yang menghasilkan 1.0, diukur dengan tolok ukur yang sama.
+
+| Target              | Operator          | Mesin asli | 1.0     | Median generasi (1.0) | Contoh hasil (1.0)                                |
+| ------------------- | ----------------- | ---------- | ------- | --------------------- | ------------------------------------------------- |
+| `x*x*x - 2*x + 1`   | `+ - *`           | 6          | **20**  | 9                     | `pow(x, 3) - 2 * x + 1`                           |
+| `3*x*x + 2`         | `+ - *`           | 17         | **20**  | 1                     | `3 * pow(x, 2) + 2`                               |
+| `x*x + 2/x`         | `+ - * /`         | 19         | **20**  | 14                    | `0.9716 * pow(x, 2) + 2.0113 / x + 0.087772`      |
+| `exp(-x*x/2)`       | `+ - * / exp`     | **19**     | 13      | 22                    | `0.99343 * exp(-0.54735 * pow(x, 2)) + 0.020478`  |
+| `sin(x) + sin(x*x)` | `+ - * / sin cos` | **15**     | 12      | 19                    | `sin(x) + sin(pow(x, 2))`                         |
+| `sin(x) * exp(x/3)` | `+ - * / sin exp` | **7**      | 3       | 12                    | `1.0273 * exp(0.30728 * x) * sin(x) + 0.023183`   |
+| **Total (dari 120)** |                  | 83         | **88**  |                       |                                                   |
 
 Yang ditunjukkan tabel ini:
 
-- **Target polinomial dan rasional selalu terpecahkan** (60/60, dibandingkan 42/60 pada Fase 1), biasanya dalam beberapa generasi saja. Penskalaan linear dan pindah silang subpohon yang melakukan pekerjaannya di sini.
-- **Target dengan konstanta di dalam fungsi nonlinear** (`1/2` dalam `exp(-x*x/2)`, `1/3` dalam `exp(x/3)`) lebih jarang terpecahkan dibandingkan pada Fase 1 (28/60, dibandingkan 41/60). Fase 1 menggeser setiap konstanta pada setiap keturunan, yang kebetulan cocok untuk target-target ini. [Optimasi konstanta](#optimasi-konstanta-eksperimental) eksperimental tidak menutup selisih ini.
-- **Versi ini mencari persis seperti Fase 2** (optimasi konstanta nonaktif secara bawaan), sehingga per generasi hasilnya sama dalam batas derau. Versi ini lebih cepat per detik: generasi dijalankan bertumpuk alih-alih dijeda 50 ms masing-masing.
+- **Target polinomial dan rasional selalu terpecahkan** (60/60, dibandingkan 42/60 oleh mesin asli), biasanya dalam beberapa generasi saja. Penskalaan linear dan pindah silang subpohon yang melakukan pekerjaannya di sini.
+- **Target dengan konstanta di dalam fungsi nonlinear** (`1/2` dalam `exp(-x*x/2)`, `1/3` dalam `exp(x/3)`) lebih jarang terpecahkan dibandingkan oleh mesin asli (28/60, dibandingkan 41/60). Mesin asli menggeser setiap konstanta pada setiap keturunan, yang kebetulan cocok untuk target-target ini. [Optimasi konstanta](#optimasi-konstanta-eksperimental) eksperimental tidak menutup selisih ini.
 - Bahkan ketika sebuah proses meleset dari target yang ketat, biasanya ia menemukan R² di atas 0,99. Contoh-contohnya menunjukkan hasil yang nyaris tepat, dengan bentuk yang benar tetapi konstanta yang sedikit keliru, seperti `exp(0.307x)` untuk `exp(x/3)`.
 
 ---
